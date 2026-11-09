@@ -79,8 +79,8 @@ public enum Aufgaben {
             throw Fehler.server("Edupool Boards hat keinen Freigabe-Code geliefert (HTTP \(s)).")
         }
         let seite = ((o["verification_uri"] as? String) ?? basis + "/cli/authorize") + "?user_code=" + (uc.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? uc)
-        return Freigabe(deviceCode: dc, userCode: uc, seite: URL(string: seite)!, intervall: max(2, (o["interval"] as? Double) ?? 5),
-                        ablauf: Date().addingTimeInterval((o["expires_in"] as? Double) ?? 600))
+        return Freigabe(deviceCode: dc, userCode: uc, seite: URL(string: seite)!, intervall: max(2, zahl(o["interval"]) > 0 ? zahl(o["interval"]) : 5),
+                        ablauf: Date().addingTimeInterval(zahl(o["expires_in"]) > 0 ? zahl(o["expires_in"]) : 600))
     }
 
     /// Einmal nachfragen: Token, nil = noch nicht bestätigt
@@ -120,7 +120,7 @@ public enum Aufgaben {
                 let (titel, beschreibung) = textAus(k, inhalt)
                 aufgaben.append(Aufgabe(id: "\(id)", titel: titel, beschreibung: beschreibung, inhalt: inhalt,
                                         geaendert: zeit(k["updated_at"] ?? k["updatedAt"] ?? k["created_at"]),
-                                        board: b.id, boardTitel: b.titel, spalte: spalte, kategorie: kat, sort: (k["sort_index"] as? Double) ?? 0))
+                                        board: b.id, boardTitel: b.titel, spalte: spalte, kategorie: kat, sort: zahl(k["sort_index"])))
             }
         }
         return AufgabenStand(aufgaben: aufgaben, boards: boards.count)
@@ -162,12 +162,21 @@ public enum Aufgaben {
         return f.date(from: s)
     }
 
+    /// Zahl aus JSON (Int, Double, NSNumber oder Text)
+    static func zahl(_ w: Any?) -> Double {
+        if let d = w as? Double { return d }
+        if let i = w as? Int { return Double(i) }
+        if let n = w as? NSNumber { return n.doubleValue }
+        if let s = w as? String { return Double(s) ?? 0 }
+        return 0
+    }
+
     static func https(_ u: Any?) -> String { let s = (u as? String) ?? ""; return s.lowercased().hasPrefix("http") ? s : "" }
 
     /// Inhalt der Karte als Blöcke (text, link, file, image, video, audio, plotter, edupool_media)
     public static func inhaltAus(_ k: [String: Any]) -> [Aufgabe.Block] {
         var b: [Aufgabe.Block] = []
-        let roh = ((k["blocks"] as? [[String: Any]]) ?? []).sorted { (($0["position"] as? Double) ?? 0) < (($1["position"] as? Double) ?? 0) }
+        let roh = ((k["blocks"] as? [[String: Any]]) ?? []).sorted { zahl($0["position"]) < zahl($1["position"]) }
         for x in roh {
             let typ = (x["block_type"] as? String) ?? (x["type"] as? String) ?? "text"
             let d = x["data"] as? [String: Any] ?? [:]
