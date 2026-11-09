@@ -13,6 +13,10 @@ final class Kern {
     let vorschau = CommandLine.arguments.contains("--vorschau")
     var einstellungen: MorgenEinstellungen { didSet { speichern() } }
     var token: String { didSet { if !vorschau { Schluesselbund.speichern(token, "token"); speichern() } } }
+    var mensaPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(mensaPasswort, "mensa"); speichern() } } }
+    var freigabePasswort: String { didSet { if !vorschau { Schluesselbund.speichern(freigabePasswort, "freigabe"); speichern() } } }
+    var geheim: Geheimnisse { Geheimnisse(mensa: mensaPasswort, freigabe: freigabePasswort) }
+    var farbton: Farbton { Farbton.zu(einstellungen.farbton) }
 
     var wetter: Wetter?
     var frei: [FreierTag] = []
@@ -21,6 +25,9 @@ final class Kern {
     var post = ""
     var vertretung: VertretungsPlan?
     var vertretungFehler = ""
+    var mensa: MensaTag?
+    var mensaFehler = ""
+    var obstHeute = false
     var laedt = false
     var meldung = ""
     var weckerText = ""
@@ -37,11 +44,15 @@ final class Kern {
             e.kuerzel = "Sta"
             einstellungen = e
             token = ""
+            mensaPasswort = ""
+            freigabePasswort = ""
             vorschauDaten()
             return
         }
         einstellungen = UserDefaults.standard.string(forKey: "einstellungen").flatMap(MorgenEinstellungen.aus(json:)) ?? MorgenEinstellungen()
         token = Schluesselbund.lesen("token") ?? ""
+        mensaPasswort = Schluesselbund.lesen("mensa") ?? ""
+        freigabePasswort = Schluesselbund.lesen("freigabe") ?? ""
     }
 
     var ha: HomeAssistant { HomeAssistant(adresse: einstellungen.haAdresse, token: token) }
@@ -49,7 +60,7 @@ final class Kern {
     private func speichern() {
         guard !vorschau else { return }
         UserDefaults.standard.set(einstellungen.json(), forKey: "einstellungen")
-        if MorgenAblage.gruppeDa { MorgenAblage.speichern(einstellungen, token: token) }
+        if MorgenAblage.gruppeDa { MorgenAblage.speichern(einstellungen, token: token, geheim: geheim) }
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -80,10 +91,23 @@ final class Kern {
         wetter = await w
         if let neu = await f { frei = neu }
         post = await p
-        if e.vertretung, !e.vertretungLink.isEmpty, !e.kuerzel.isEmpty {
-            do { vertretung = try await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel); vertretungFehler = "" }
-            catch { vertretungFehler = "Vertretungsplan nicht erreichbar" }
+        let pw = freigabePasswort, mpw = mensaPasswort
+        async let v: Result<VertretungsPlan, Error>? = e.vertretung && !e.vertretungLink.isEmpty && !e.kuerzel.isEmpty
+            ? await versuch { try await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel, passwort: pw) } : nil
+        async let m: Result<MensaTag?, Error>? = e.mensaBereit && !mpw.isEmpty
+            ? await versuch { try await Mensa.laden(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: mpw, ziel: Mensa.zielTag()) } : nil
+        async let o: Set<String>? = e.obstBereit ? try? await SchulKalender.laden(e.obstKalender) : nil
+        switch await v {
+        case .success(let p)?: vertretung = p; vertretungFehler = ""
+        case .failure(let f)?: vertretungFehler = (f as? URLError)?.code == .userAuthenticationRequired ? "Freigabe-Passwort fehlt oder stimmt nicht" : "Vertretungsplan nicht erreichbar"
+        case nil: vertretung = nil; vertretungFehler = ""
         }
+        switch await m {
+        case .success(let t)?: mensa = t; mensaFehler = t == nil ? "Für heute steht nichts im Speiseplan" : ""
+        case .failure(let f)?: mensaFehler = f.localizedDescription
+        case nil: mensa = nil; mensaFehler = e.mensa && mpw.isEmpty ? "Kantinen-Passwort fehlt" : ""
+        }
+        if let tage = await o { obstHeute = tage.contains(Zeit.iso(Date())) } else if !e.obstBereit { obstHeute = false }
         if e.weckerAutomatisch && Wecker.verfuegbar { await weckerStellen(still: true) }
         await widgetUebergeben()
     }
@@ -94,6 +118,7 @@ final class Kern {
         var d = BriefingDaten()
         d.wetter = wetter; d.termine = termine; d.erinnerungen = erinnerungen; d.post = post
         d.vertretung = einstellungen.vertretung ? vertretung : nil; d.frei = freiHeute
+        d.haeuser = einstellungen.haeuser; d.mensa = einstellungen.mensa ? mensa : nil; d.obst = einstellungen.obst && obstHeute
         return Briefing.morgen(d)
     }
 
@@ -142,14 +167,14 @@ final class Kern {
     func widgetUebergeben(erzwingen: Bool = false) async {
         #if canImport(ActivityKit)
         guard !vorschau, !MorgenAblage.gruppeDa else { return }
-        let sig = einstellungen.json() + "|" + String(token.suffix(8))
+        let sig = einstellungen.json() + "|" + String(token.suffix(8)) + "|" + String(stabil(geheim.json()))
         guard erzwingen || UserDefaults.standard.string(forKey: "widgetUebergeben") != sig else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             if erzwingen { meldung = "Live-Aktivitäten sind aus – iPhone-Einstellungen → Guten Morgen → Live-Aktivitäten erlauben." }
             return
         }
         do {
-            let a = try Activity.request(attributes: MorgenUebergabe(einstellungen: einstellungen.json(), token: token),
+            let a = try Activity.request(attributes: MorgenUebergabe(einstellungen: einstellungen.json(), token: token, geheim: geheim.json()),
                                          content: ActivityContent(state: .init(fertig: true), staleDate: nil))
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             await a.end(nil, dismissalPolicy: .immediate)
@@ -160,6 +185,9 @@ final class Kern {
         }
         #endif
     }
+
+    /// Gleiche Eingabe → gleiche Zahl, auch nach einem Neustart (hashValue ist je Start anders)
+    private func stabil(_ s: String) -> UInt64 { s.utf8.reduce(5381) { ($0 << 5) &+ $0 &+ UInt64($1) } }
 
     // MARK: Vorschau (Bildschirmfotos in der CI)
 
@@ -174,6 +202,16 @@ final class Kern {
         post = "Heute kommt ein Paket: Thalia (DHL). Dazu ein Brief."
         var p = VertretungsPlan(); p.stunden = [.init(stunde: "2", klasse: "2c")]; p.pausen = [.init(pause: "2. Pause", ort: "Mensa + Haltestelle")]
         vertretung = p
+        einstellungen.haeuser = ["Haus 2": ["2a", "2b", "2c"]]
+        einstellungen.mensa = true; einstellungen.obst = true
+        einstellungen.vertretungLink = "https://cloud.example.de/s/Beispiel"; einstellungen.obstKalender = "https://example.de/obst.ics"
+        mensa = MensaTag(datum: Zeit.iso(Date()), gerichte: [Gericht(menue: "Menü 1", text: "Spaghetti Bolognese", bestellt: true), Gericht(menue: "Menü 2", text: "Gemüsecurry mit Reis")])
+        obstHeute = true
         weckerText = "Wecker gestellt: Dienstag, 06:15 Uhr"
     }
+}
+
+/// Fehler als Wert (für async let mit Ergebnis oder Fehler)
+func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T, Error> {
+    do { return .success(try await f()) } catch { return .failure(error) }
 }

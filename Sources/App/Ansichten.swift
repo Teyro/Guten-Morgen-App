@@ -12,17 +12,18 @@ struct HauptAnsicht: View {
                 VStack(spacing: 14) {
                     kopf
                     WeckerKarte(kern: kern)
+                    if zeigeSchule { SchuleKarte(kern: kern) }
                     if let w = kern.wetter { WetterKarte(wetter: w) }
                     if kern.einstellungen.termine { TermineKarte(termine: kern.termine.filter { Zeit.kalender.isDateInToday($0.start) }, erinnerungen: kern.erinnerungen) }
                     if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
-                    if kern.einstellungen.vertretung, kern.vertretung != nil || !kern.vertretungFehler.isEmpty { VertretungKarte(plan: kern.vertretung, fehler: kern.vertretungFehler) }
                     knoepfe
                 }
                 .padding()
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
             }
-            .background(Hintergrund())
+            .background(Hintergrund(farbton: kern.farbton))
+            .tint(kern.farbton.akzent)
             .refreshable { await kern.aktualisieren() }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -43,20 +44,34 @@ struct HauptAnsicht: View {
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
     }
 
+    /// Schul-Karte nur, wenn etwas davon eingerichtet ist
+    private var zeigeSchule: Bool {
+        let e = kern.einstellungen
+        return (e.vertretung && !e.vertretungLink.isEmpty) || e.mensa || e.obstBereit
+    }
+
     private var kopf: some View {
         let jetzt = Date()
         let h = Zeit.kalender.component(.hour, from: jetzt)
         let f = DateFormatter(); f.locale = Locale(identifier: "de_DE"); f.dateFormat = "EEEE, d. MMMM"
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(h < 11 ? "Guten Morgen" : h < 18 ? "Hallo" : "Guten Abend").font(.largeTitle.weight(.bold))
-            HStack(spacing: 6) {
-                Text(f.string(from: jetzt))
-                if let frei = kern.freiHeute { Text("· \(frei.name)").foregroundStyle(.orange) }
-                if kern.laedt { ProgressView().controlSize(.small) }
+        return HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(h < 11 ? "Guten Morgen" : h < 18 ? "Hallo" : "Guten Abend").font(.system(.largeTitle, design: .rounded).weight(.bold))
+                HStack(spacing: 6) {
+                    Text(f.string(from: jetzt))
+                    if let frei = kern.freiHeute { Text("· \(frei.name)").foregroundStyle(kern.farbton.akzent) }
+                    if kern.laedt { ProgressView().controlSize(.small) }
+                }
+                .font(.headline).foregroundStyle(.secondary)
             }
-            .font(.headline).foregroundStyle(.secondary)
+            Spacer()
+            if let w = kern.wetter {
+                VStack(spacing: 0) {
+                    Image(systemName: Wetter.symbol(w.jetztCode ?? w.heute?.code ?? 3)).symbolRenderingMode(.multicolor).font(.system(size: 34))
+                    if let j = w.jetzt { Text("\(Int(j.rounded()))°").font(.system(.title2, design: .rounded).weight(.semibold)) }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 8)
     }
 
@@ -78,11 +93,10 @@ struct HauptAnsicht: View {
 }
 
 struct Hintergrund: View {
+    var farbton: Farbton = Farbton.alle[0]
     @Environment(\.colorScheme) private var schema
     var body: some View {
-        LinearGradient(colors: schema == .dark ? [Color(red: 0.07, green: 0.08, blue: 0.16), Color(red: 0.12, green: 0.1, blue: 0.2)]
-                                               : [Color(red: 1, green: 0.95, blue: 0.88), Color(red: 0.93, green: 0.95, blue: 1)],
-                       startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        LinearGradient(colors: schema == .dark ? farbton.dunkel : farbton.hell, startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
 }
 
@@ -92,13 +106,18 @@ struct Karte<Inhalt: View>: View {
     let titel: String
     @ViewBuilder var inhalt: Inhalt
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(titel, systemImage: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(farbe)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 26, height: 26).background(farbe.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(titel).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            }
             inhalt
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
     }
 }
 
@@ -121,13 +140,13 @@ struct WeckerKarte: View {
     let kern: Kern
     var body: some View {
         let w = kern.naechsterWecker
-        Karte(symbol: "alarm.fill", farbe: .orange, titel: Zeit.kalender.isDateInToday(w.tag) ? "Wecker heute" : "Wecker \(Zeit.wochentag(w.tag))") {
+        Karte(symbol: "alarm.fill", farbe: kern.farbton.akzent, titel: Zeit.kalender.isDateInToday(w.tag) ? "Wecker heute" : "Wecker \(Zeit.wochentag(w.tag))") {
             HStack(alignment: .firstTextBaseline) {
                 Text(w.minuten.map(Zeit.hhmm) ?? "frei").font(.system(size: 52, weight: .bold, design: .rounded))
                 Spacer()
                 if Wecker.verfuegbar {
                     Button(w.minuten == nil ? "Kein Wecker" : "Stellen") { Task { await kern.weckerStellen() } }
-                        .buttonStyle(.borderedProminent).tint(.orange)
+                        .buttonStyle(.borderedProminent).tint(kern.farbton.akzent)
                 }
             }
             if !w.grund.isEmpty { Text(w.grund).font(.callout).foregroundStyle(.secondary) }
@@ -172,30 +191,114 @@ struct TermineKarte: View {
     }
 }
 
-struct VertretungKarte: View {
-    let plan: VertretungsPlan?
-    let fehler: String
+/// Alles zur Schule heute: wo muss ich rein, Aufsicht, Schulobst, Mensa – wie die Übersicht in Mein Tag
+struct SchuleKarte: View {
+    let kern: Kern
+    @State private var alleGerichte = false
+
     var body: some View {
-        Karte(symbol: "person.2.fill", farbe: .purple, titel: "Vertretung") {
-            if let p = plan {
-                if p.fehlt { Text("Du bist als fehlend eingetragen").foregroundStyle(.red) }
-                if p.stunden.isEmpty && p.pausen.isEmpty { Text("Keine Vertretung für dich.") }
-                ForEach(p.stunden, id: \.self) { s in Text("\(Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde) · \(s.klasse)").font(.body.weight(.semibold)) }
-                ForEach(p.pausen, id: \.self) { s in Label("\(s.pause): \(s.ort)", systemImage: "figure.walk") }
-                if !p.datei.isEmpty { Text(p.datei.replacingOccurrences(of: ".docx", with: "")).font(.caption).foregroundStyle(.secondary) }
-            } else { Text(fehler).foregroundStyle(.secondary) }
+        let e = kern.einstellungen
+        Karte(symbol: "graduationcap.fill", farbe: .purple, titel: "Schule heute") {
+            if e.vertretung && !e.vertretungLink.isEmpty {
+                if let p = kern.vertretung {
+                    if p.fehlt { Hinweis(text: "Du bist als fehlend eingetragen", farbe: .red) }
+                    if p.ausserHaus { Hinweis(text: "Du bist außer Haus eingetragen", farbe: .orange) }
+                    if p.stunden.isEmpty && p.pausen.isEmpty && !p.fehlt {
+                        Label("Keine Vertretung für dich", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.body.weight(.medium))
+                    }
+                    ForEach(p.stunden, id: \.self) { s in
+                        let haus = Vertretung.haus(s.klasse, e.haeuser)
+                        Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .purple,
+                              titel: "Vertretung \(s.klasse)", unter: haus.isEmpty ? (Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde) : "\(Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde) · \(haus)")
+                    }
+                    ForEach(p.pausen, id: \.self) { a in
+                        Zeile(marke: String(a.pause.prefix(1)) + ". P", farbe: .orange,
+                              titel: a.reserve ? "Aufsicht (Reserve)" : "Hofaufsicht", unter: "\(a.pause) · \(a.ort)")
+                    }
+                    ForEach(p.hinweise, id: \.self) { h in Label(h, systemImage: "exclamationmark.bubble.fill").font(.callout).foregroundStyle(.secondary) }
+                    if !p.fehlen.isEmpty { Text("Es fehlen: " + p.fehlen.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
+                } else if !kern.vertretungFehler.isEmpty {
+                    Label(kern.vertretungFehler, systemImage: "wifi.exclamationmark").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            if e.obstBereit && kern.obstHeute {
+                Zeile(marke: "🍎", farbe: .green, titel: "Heute kommt Schulobst", unter: nil)
+            }
+            if e.mensa {
+                if let m = kern.mensa {
+                    if let f = m.frei {
+                        Zeile(marke: "🍽", farbe: .gray, titel: "Mensa geschlossen", unter: f.isEmpty ? nil : f)
+                    } else if let h = m.haupt {
+                        Button { alleGerichte.toggle() } label: {
+                            Zeile(marke: "🍽", farbe: .teal, titel: h.text, unter: (h.bestellt ? "Bestellt · " : "") + h.menue + (m.gerichte.count > 1 ? (alleGerichte ? "" : " · mehr …") : ""))
+                        }.buttonStyle(.plain)
+                        if alleGerichte {
+                            ForEach(m.gerichte.filter { $0 != h }, id: \.self) { g in Text("\(g.menue): \(g.text)").font(.callout).foregroundStyle(.secondary).padding(.leading, 52) }
+                        }
+                    }
+                } else if !kern.mensaFehler.isEmpty {
+                    Label(kern.mensaFehler, systemImage: "fork.knife").font(.callout).foregroundStyle(.secondary)
+                }
+            }
         }
+    }
+}
+
+/// Eine Zeile mit farbiger Marke links („2.“, „1. P“, 🍎)
+struct Zeile: View {
+    let marke: String
+    let farbe: Color
+    let titel: String
+    let unter: String?
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(marke).font(.system(.callout, design: .rounded).weight(.bold)).foregroundStyle(farbe)
+                .frame(width: 40, height: 40).background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(titel).font(.body.weight(.semibold)).multilineTextAlignment(.leading)
+                if let u = unter { Text(u).font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+struct Hinweis: View {
+    let text: String
+    let farbe: Color
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill").font(.callout.weight(.semibold)).foregroundStyle(farbe)
     }
 }
 
 struct EinstellungenAnsicht: View {
     @Bindable var kern: Kern
     @Environment(\.dismiss) private var schliessen
+    @State private var haeuserText = ""
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
     var body: some View {
         @Bindable var k = kern
         Form {
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(Farbton.alle) { f in
+                            Button { k.einstellungen.farbton = f.id } label: {
+                                VStack(spacing: 6) {
+                                    LinearGradient(colors: f.widget, startPoint: .top, endPoint: .bottom)
+                                        .frame(width: 58, height: 58).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(f.id == kern.einstellungen.farbton ? Color.primary : .clear, lineWidth: 3))
+                                        .overlay { if f.id == kern.einstellungen.farbton { Image(systemName: "checkmark").font(.headline.weight(.bold)).foregroundStyle(.white) } }
+                                    Text(f.name).font(.caption).foregroundStyle(.primary)
+                                }
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.vertical, 6)
+                }
+            } header: { Text("Aussehen") } footer: { Text("Farbton für App und Widget.") }
+
             Section {
                 ForEach(tage, id: \.0) { t in
                     HStack {
@@ -238,10 +341,32 @@ struct EinstellungenAnsicht: View {
             } header: { Text("Home Assistant") } footer: { Text("Token: in Home Assistant unten links auf deinen Namen → Sicherheit → Langlebige Zugriffstoken. Post kommt aus der Integration „Briefankündigung“.") }
 
             Section {
-                Toggle("Vertretung vorlesen", isOn: $k.einstellungen.vertretung)
+                Toggle("Vertretungsplan", isOn: $k.einstellungen.vertretung)
                 TextField("Freigabe-Link (https://…/s/…)", text: $k.einstellungen.vertretungLink).textInputAutocapitalization(.never).autocorrectionDisabled()
+                SecureField("Freigabe-Passwort (falls gesetzt)", text: $k.freigabePasswort)
                 TextField("Kürzel, z. B. Sta", text: $k.einstellungen.kuerzel).textInputAutocapitalization(.never)
-            } header: { Text("Schule") } footer: { Text("Cloud-Ordner mit dem Vertretungsplan (Word-Dateien). Gelesen wird nur, was für dein Kürzel drinsteht.") }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Häuser der Klassen").font(.subheadline)
+                    TextEditor(text: $haeuserText).frame(minHeight: 80).font(.callout.monospaced()).textInputAutocapitalization(.never)
+                        .onChange(of: haeuserText) { _, neu in k.einstellungen.haeuser = Vertretung.haeuser(text: neu) }
+                }
+            } header: { Text("Vertretung") } footer: { Text("Cloud-Ordner mit dem Vertretungsplan (Word-Dateien). Gelesen wird nur, was für dein Kürzel drinsteht – Stunden, Hofaufsicht und Hinweise. Häuser je Zeile, z. B. „Haus 1: 1a, 1b, 2a“: dann steht dabei, wohin du musst.") }
+
+            Section {
+                Toggle("Speiseplan zeigen", isOn: $k.einstellungen.mensa)
+                if kern.einstellungen.mensa {
+                    TextField("Adresse des Kantinen-Portals (https://…)", text: $k.einstellungen.mensaAdresse).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    TextField("Benutzername", text: $k.einstellungen.mensaBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("Passwort", text: $k.mensaPasswort)
+                }
+            } header: { Text("Mensa") } footer: { Text("Das Essen des Tages aus dem Kantinen-Portal (PCA) – dieselben Zugangsdaten wie im Browser. Bestellte Gerichte stehen vorne.") }
+
+            Section {
+                Toggle("Schulobst-Tage zeigen", isOn: $k.einstellungen.obst)
+                if kern.einstellungen.obst {
+                    TextField("Kalender-Link (…/calendar.ics)", text: $k.einstellungen.obstKalender).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                }
+            } header: { Text("Schulobst") } footer: { Text("Öffentlicher IServ-Kalender mit den Liefertagen (Kalender → Teilen → öffentlicher Link).") }
 
             WeckmusikAbschnitt(musik: kern.musik)
 
@@ -259,6 +384,7 @@ struct EinstellungenAnsicht: View {
                 Link("Guten Morgen auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
             }
         }
+        .onAppear { haeuserText = Vertretung.text(haeuser: kern.einstellungen.haeuser) }
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { schliessen(); Task { await kern.aktualisieren() } } } }

@@ -25,6 +25,29 @@ struct MorgenEintrag: TimelineEntry {
     var post = ""
     var heute: [Termin] = []
     var vertretung: VertretungsPlan?
+    var haeuser: [String: [String]] = [:]
+    var mensa: MensaTag?
+    var obst = false
+    var farbton = "morgenrot"
+
+    /// Kurze Schul-Zeilen fürs Widget: „2. Vertretung 2c · Haus 2“, „1. P Hofaufsicht Mensa“, „🍎 Schulobst“, „🍽 Spaghetti“
+    var schulZeilen: [(marke: String, text: String)] {
+        var z: [(marke: String, text: String)] = []
+        if let v = vertretung {
+            if v.fehlt { z.append(("⚠️", "Als fehlend eingetragen")) }
+            for s in v.stunden {
+                let h = Vertretung.haus(s.klasse, haeuser)
+                z.append((Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(3)), "Vertretung \(s.klasse)" + (h.isEmpty ? "" : " · \(h)")))
+            }
+            for p in v.pausen { z.append((String(p.pause.prefix(1)) + ".P", (p.reserve ? "Reserve " : "Aufsicht ") + p.ort)) }
+            if v.stunden.isEmpty && v.pausen.isEmpty && !v.fehlt { z.append(("✓", "Keine Vertretung")) }
+        }
+        if obst { z.append(("🍎", "Heute Schulobst")) }
+        if let m = mensa {
+            if let f = m.frei { z.append(("🍽", "Mensa zu" + (f.isEmpty ? "" : " (\(f))"))) } else if let h = m.haupt { z.append(("🍽", h.text)) }
+        }
+        return z
+    }
 }
 
 /// Ohne Einstellungen pro Widget (StaticConfiguration) – die starten auch in neu signierten Apps.
@@ -46,7 +69,7 @@ struct MorgenZeitleiste: TimelineProvider {
 
     private func eintrag() async -> MorgenEintrag {
         guard let paar = WidgetSpeicher.einstellungen() else { return MorgenEintrag(date: Date(), eingerichtet: false) }
-        let (e, token) = paar
+        let (e, token, geheim) = paar
         let d = UserDefaults.standard
         // freie Tage höchstens einmal am Tag holen
         var frei = (d.data(forKey: "frei")).flatMap { try? JSONDecoder().decode([FreierTag].self, from: $0) } ?? []
@@ -74,14 +97,33 @@ struct MorgenZeitleiste: TimelineProvider {
         // Vertretung (fürs große Widget) höchstens alle 30 Minuten aus dem Schul-Ordner
         var plan = d.data(forKey: "vertretung").flatMap { try? JSONDecoder().decode(VertretungsPlan.self, from: $0) }
         if e.vertretung, !e.vertretungLink.isEmpty, !e.kuerzel.isEmpty, Date().timeIntervalSince1970 - d.double(forKey: "vertretungStand") > 1800 {
-            if let neu = try? await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel) {
+            if let neu = try? await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel, passwort: geheim.freigabe) {
                 plan = neu
                 d.set(try? JSONEncoder().encode(neu), forKey: "vertretung")
             }
             d.set(Date().timeIntervalSince1970, forKey: "vertretungStand")
         }
+        // Mensa: einmal je Tag (bei Fehler höchstens stündlich neu versuchen)
+        let ziel = Mensa.zielTag()
+        var mensa = d.data(forKey: "mensa").flatMap { try? JSONDecoder().decode(MensaTag.self, from: $0) }
+        if mensa?.datum != ziel { mensa = nil }
+        if e.mensaBereit, !geheim.mensa.isEmpty, mensa == nil, Date().timeIntervalSince1970 - d.double(forKey: "mensaVersuch") > 3600 {
+            d.set(Date().timeIntervalSince1970, forKey: "mensaVersuch")
+            if let t = try? await Mensa.laden(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: geheim.mensa, ziel: ziel) {
+                mensa = t
+                d.set(try? JSONEncoder().encode(t), forKey: "mensa")
+            }
+        }
+        // Schulobst: Kalender höchstens alle 12 Stunden
+        var obstTage = Set(d.stringArray(forKey: "obst") ?? [])
+        if e.obstBereit, Date().timeIntervalSince1970 - d.double(forKey: "obstStand") > 12 * 3600, let neu = try? await SchulKalender.laden(e.obstKalender) {
+            obstTage = neu
+            d.set(Array(neu), forKey: "obst")
+            d.set(Date().timeIntervalSince1970, forKey: "obstStand")
+        }
         return MorgenEintrag(date: Date(), eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p,
-                             heute: heute, vertretung: e.vertretung ? plan : nil)
+                             heute: heute, vertretung: e.vertretung ? plan : nil, haeuser: e.haeuser,
+                             mensa: e.mensa ? mensa : nil, obst: e.obstBereit && obstTage.contains(Zeit.iso(Date())), farbton: e.farbton)
     }
 }
 
@@ -89,11 +131,11 @@ struct MorgenWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "morgen", provider: MorgenZeitleiste()) { e in
             MorgenWidgetAnsicht(e: e).containerBackground(for: .widget) {
-                LinearGradient(colors: [Color(red: 0.18, green: 0.2, blue: 0.48), Color(red: 0.85, green: 0.45, blue: 0.4)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: Farbton.zu(e.farbton).widget, startPoint: .topLeading, endPoint: .bottomTrailing)
             }
         }
         .configurationDisplayName("Guten Morgen")
-        .description("Wecker, Wetter, Termine, Vertretung und Post.")
+        .description("Wecker, Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Termine und Post.")
         #if os(iOS)
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline, .accessoryCircular])
         #endif
@@ -126,7 +168,8 @@ struct MorgenWidgetAnsicht: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("⏰ \(weckText) \(weckTag)").font(.headline)
                     if let w = e.wetter?.heute { Text("\(Int(w.min.rounded()))–\(Int(w.max.rounded()))° · Regen \(w.regen) %").font(.caption) }
-                    if let t = e.termin { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption).lineLimit(1) }
+                    if let s = e.schulZeilen.first { Text("\(s.marke) \(s.text)").font(.caption).lineLimit(1) }
+                    else if let t = e.termin { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption).lineLimit(1) }
                 }
             #endif
             case .systemMedium: mittel
@@ -181,12 +224,10 @@ struct MorgenWidgetAnsicht: View {
                     }
                 }
             }
-            if let v = e.vertretung {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label("Vertretung", systemImage: "person.2.fill").font(.caption.weight(.semibold)).opacity(0.85)
-                    if v.stunden.isEmpty && v.pausen.isEmpty { Text("Keine Vertretung").font(.callout).opacity(0.8) }
-                    if !v.stunden.isEmpty { Text(v.stunden.map { "\($0.stunde). \($0.klasse)" }.joined(separator: " · ")).font(.callout.weight(.semibold)).lineLimit(1) }
-                    ForEach(Array(v.pausen.prefix(2).enumerated()), id: \.offset) { _, p in Text("🚶 \(p.pause): \(p.ort)").font(.caption).lineLimit(1) }
+            if !e.schulZeilen.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Schule", systemImage: "graduationcap.fill").font(.caption.weight(.semibold)).opacity(0.85)
+                    ForEach(Array(e.schulZeilen.prefix(5).enumerated()), id: \.offset) { _, z in schulZeile(z) }
                 }
             }
             if !e.post.isEmpty { Label(e.post, systemImage: "shippingbox.fill").font(.caption).lineLimit(2) }
@@ -199,17 +240,29 @@ struct MorgenWidgetAnsicht: View {
     private var mittel: some View {
         HStack(spacing: 14) {
             klein.frame(width: 120)
-            VStack(alignment: .leading, spacing: 6) {
-                if let g = e.wecker?.grund, !g.isEmpty { Text(g).font(.caption).lineLimit(2).opacity(0.9) }
-                if let t = e.termin {
+            VStack(alignment: .leading, spacing: 5) {
+                // Schule zuerst (Vertretung, Aufsicht, Obst, Mensa), dann Termin und Post
+                ForEach(Array(e.schulZeilen.prefix(4).enumerated()), id: \.offset) { _, z in schulZeile(z) }
+                if e.schulZeilen.isEmpty, let g = e.wecker?.grund, !g.isEmpty { Text(g).font(.caption).lineLimit(2).opacity(0.9) }
+                if e.schulZeilen.count < 3, let t = e.termin {
                     Label("\(t.start.uhrzeit) \(t.titel)", systemImage: "calendar").font(.caption.weight(.semibold)).lineLimit(2)
                 }
-                if !e.post.isEmpty { Label(e.post, systemImage: "shippingbox.fill").font(.caption).lineLimit(3) }
-                if let w = e.wetter, let t = w.heute, t.regen >= 50 { Label("Regen \(t.regen) %", systemImage: "umbrella.fill").font(.caption) }
+                if e.schulZeilen.count < 2, !e.post.isEmpty { Label(e.post, systemImage: "shippingbox.fill").font(.caption).lineLimit(3) }
+                if e.schulZeilen.count < 4, let w = e.wetter, let t = w.heute, t.regen >= 50 { Label("Regen \(t.regen) %", systemImage: "umbrella.fill").font(.caption) }
                 Spacer(minLength: 0)
             }
             .foregroundStyle(.white)
             Spacer(minLength: 0)
+        }
+    }
+}
+
+extension MorgenWidgetAnsicht {
+    func schulZeile(_ z: (marke: String, text: String)) -> some View {
+        HStack(spacing: 6) {
+            Text(z.marke).font(.system(size: 11, weight: .bold, design: .rounded)).frame(minWidth: 26, minHeight: 18)
+                .background(.white.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Text(z.text).font(.caption.weight(.semibold)).lineLimit(1)
         }
     }
 }
@@ -219,7 +272,7 @@ struct MorgenWidgetAnsicht: View {
 struct UebergabeWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MorgenUebergabe.self) { k in
-            let _ = WidgetSpeicher.uebernehmen(json: k.attributes.einstellungen, token: k.attributes.token)
+            let _ = WidgetSpeicher.uebernehmen(json: k.attributes.einstellungen, token: k.attributes.token, geheim: k.attributes.geheim)
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill").font(.title2).foregroundStyle(.green)
                 Text("Widget ist verbunden").font(.headline)
@@ -227,7 +280,7 @@ struct UebergabeWidget: Widget {
             }
             .padding(14)
         } dynamicIsland: { k in
-            let _ = WidgetSpeicher.uebernehmen(json: k.attributes.einstellungen, token: k.attributes.token)
+            let _ = WidgetSpeicher.uebernehmen(json: k.attributes.einstellungen, token: k.attributes.token, geheim: k.attributes.geheim)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.center) { Text("Widget ist verbunden").font(.headline) }
             } compactLeading: {

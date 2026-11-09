@@ -8,6 +8,9 @@ public struct BriefingDaten: Sendable {
     public var erinnerungen: [String] = []
     public var post = ""
     public var vertretung: VertretungsPlan?
+    public var haeuser: [String: [String]] = [:]
+    public var mensa: MensaTag?
+    public var obst = false
     public var frei: FreierTag?
     public var wecker: Weckzeit?
     public var offeneFenster: [String] = []
@@ -45,7 +48,10 @@ public enum Briefing {
             s.append(d.erinnerungen.count == 1 ? "Eine Erinnerung ist fällig: \(d.erinnerungen[0])." : "\(d.erinnerungen.count) Erinnerungen sind fällig, zum Beispiel: \(aufzaehlen(Array(d.erinnerungen.prefix(3))))." )
         }
         if !d.post.isEmpty { s.append(d.post) }
-        if let v = d.vertretung, d.frei == nil, (2...6).contains(k.component(.weekday, from: d.jetzt)) { s.append(v.satz()) }
+        let schultag = d.frei == nil && (2...6).contains(k.component(.weekday, from: d.jetzt))
+        if let v = d.vertretung, schultag { s.append(v.satz(haeuser: d.haeuser)) }
+        if schultag && d.obst { s.append("Heute kommt Schulobst.") }
+        if let m = d.mensa, schultag, m.datum == Zeit.iso(d.jetzt) { s.append(m.satz()) }
         s.append(h < 18 ? "Einen schönen Tag!" : "Einen schönen Abend!")
         return s.filter { !$0.isEmpty }.joined(separator: " ")
     }

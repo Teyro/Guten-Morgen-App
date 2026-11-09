@@ -104,6 +104,56 @@ final class MorgenKernTests: XCTestCase {
         XCTAssertTrue(n.contains("Alle Lichter aus – erledigt.") && n.contains("morgen um 6 Uhr 15"), n)
     }
 
+    func testHausUndReserve() {
+        func tc(_ t: String, _ b: Int) -> String { "<w:tc><w:tcPr><w:tcW w:w=\"\(b)\"/></w:tcPr><w:p><w:r><w:t>\(t)</w:t></w:r></w:p></w:tc>" }
+        func tr(_ z: [String]) -> String { "<w:tr>" + z.joined() + "</w:tr>" }
+        let xml = "<w:tbl>" + tr([tc("Klasse", 1000), tc("2a", 1000)]) + tr([tc("2", 1000), tc("Sta", 1000)])
+            + tr([tc("", 1000), tc("1.  Pause", 500), tc("2. Pause", 500)]) + tr([tc("Hof", 1000), tc("(Sta)", 500), tc("Wal", 500)])
+            + tr([tc("Haus 4", 1000), tc("Mey", 500), tc("Mey", 500)]) + "</w:tbl>"
+        let p = Vertretung.auswerten(xml, kuerzel: "Sta")
+        XCTAssertEqual(p.belegt, 1) // Pausenzeilen zählen nicht mit
+        XCTAssertEqual(p.pausen, [.init(pause: "1. Pause", ort: "Hof", reserve: true)])
+        let h = Vertretung.haeuser(text: "Haus 1: 1a, 2a\nHaus 4: 4a 4b")
+        XCTAssertEqual(Vertretung.haus("2a", h), "Haus 1")
+        XCTAssertEqual(Vertretung.haus("4B", h), "Haus 4")
+        XCTAssertEqual(p.satz(haeuser: h), "Vertretung: 2. Stunde 2a in Haus 1, 1. Pause Aufsicht Hof als Reserve.")
+        XCTAssertEqual(Vertretung.haeuser(text: Vertretung.text(haeuser: h)), h)
+    }
+
+    func testMensa() {
+        let html = """
+        <thead><tr><th>Datum</th><th>Menü 1 3,90 €</th><th>Menü 2 (veg.) 3,90 €</th></tr></thead>
+        <tbody id="menuplan_data">
+        <tr data-ri="0"><td class="menu-cell-disabled">Montag 09.11.2026</td>
+          <td class="menu-cell"><div class="innerFoodNameContainer">Spaghetti Bolognese <span class="additive-info">(1,3)</span></div></td>
+          <td class="menu-cell selected"><div class="innerFoodNameContainer">Gem&uuml;securry</div></td></tr>
+        <tr data-ri="1"><td>Dienstag 10.11.2026</td><td class="menu-cell"><div class="dayOffOverlay">Feiertag</div></td><td class="menu-cell"><div class="dayOffOverlay">Feiertag</div></td></tr>
+        </tbody>
+        """
+        let t = Mensa.tageAus(html)
+        XCTAssertEqual(t.count, 2)
+        XCTAssertEqual(t[0].datum, "2026-11-09")
+        XCTAssertEqual(t[0].gerichte.map(\.text), ["Spaghetti Bolognese", "Gemüsecurry"])
+        XCTAssertEqual(t[0].gerichte.map(\.menue), ["Menü 1", "Menü 2 (veg.)"])
+        XCTAssertEqual(t[0].haupt?.text, "Gemüsecurry")
+        XCTAssertEqual(t[0].satz(), "In der Mensa gibt es für dich Gemüsecurry.")
+        XCTAssertEqual(t[1].frei, "Feiertag")
+        XCTAssertTrue(t[1].gerichte.isEmpty)
+    }
+
+    func testSchulKalender() {
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261109\r\nDTEND;VALUE=DATE:20261110\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nDTSTART;TZID=Europe/Berlin:20261111T100000\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261123\r\nDTEND;VALUE=DATE:20261125\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        XCTAssertEqual(SchulKalender.tage(ics), ["2026-11-09", "2026-11-11", "2026-11-23", "2026-11-24"])
+        var d = BriefingDaten()
+        d.jetzt = tag(2026, 11, 9, 6, 15)
+        d.obst = true
+        d.mensa = MensaTag(datum: "2026-11-09", gerichte: [Gericht(menue: "Menü 1", text: "Pizza")])
+        let s = Briefing.morgen(d)
+        XCTAssertTrue(s.contains("Heute kommt Schulobst.") && s.contains("In der Mensa gibt es Pizza."), s)
+    }
+
     func testEinstellungenAlteDaten() {
         let e = MorgenEinstellungen.aus(json: #"{"vorlauf": 60}"#)
         XCTAssertEqual(e?.vorlauf, 60)

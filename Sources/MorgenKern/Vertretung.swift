@@ -6,7 +6,17 @@ import Compression
 /// Was im Vertretungsplan (Word-Datei im Cloud-Ordner der Schule) für ein Kürzel steht
 public struct VertretungsPlan: Codable, Hashable, Sendable {
     public struct Stunde: Codable, Hashable, Sendable { public var stunde: String; public var klasse: String; public init(stunde: String, klasse: String) { self.stunde = stunde; self.klasse = klasse } }
-    public struct Pause: Codable, Hashable, Sendable { public var pause: String; public var ort: String; public init(pause: String, ort: String) { self.pause = pause; self.ort = ort } }
+    public struct Pause: Codable, Hashable, Sendable {
+        public var pause: String; public var ort: String
+        /// „(Sta)“ im Plan = nur Reserve
+        public var reserve: Bool
+        public init(pause: String, ort: String, reserve: Bool = false) { self.pause = pause; self.ort = ort; self.reserve = reserve }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            pause = try c.decode(String.self, forKey: .pause); ort = try c.decode(String.self, forKey: .ort)
+            reserve = (try? c.decodeIfPresent(Bool.self, forKey: .reserve)) ?? false
+        }
+    }
     public var datum: String?
     public var stunden: [Stunde] = []
     public var pausen: [Pause] = []
@@ -19,17 +29,45 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var belegt = 0
     public init() {}
 
-    /// „2. Stunde 2c, 2. Pause Aufsicht Mensa.“ – leer, wenn nichts für das Kürzel drinsteht
-    public func satz() -> String {
+    /// „2. Stunde 2c in Haus 1, 2. Pause Aufsicht Mensa.“ – [haeuser]: Haus → Klassen
+    public func satz(haeuser: [String: [String]] = [:]) -> String {
         var t: [String] = []
         if fehlt { t.append("du bist als fehlend eingetragen") }
-        t += stunden.map { (Int($0.stunde) != nil ? "\($0.stunde). Stunde" : $0.stunde) + " " + $0.klasse }
-        t += pausen.map { "\($0.pause) Aufsicht \($0.ort)" }
+        if ausserHaus { t.append("du bist außer Haus eingetragen") }
+        t += stunden.map { s in
+            let h = Vertretung.haus(s.klasse, haeuser)
+            return (Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde) + " " + s.klasse + (h.isEmpty ? "" : " in \(h)")
+        }
+        t += pausen.map { "\($0.pause) Aufsicht \($0.ort)" + ($0.reserve ? " als Reserve" : "") }
         return t.isEmpty ? "Laut Vertretungsplan hast du keine Vertretung." : "Vertretung: " + t.joined(separator: ", ") + "."
     }
 }
 
 public enum Vertretung {
+    /// Haus einer Klasse laut Einstellung („Haus 1“: [1a, 1b]); "2a–2b" zählt nach der ersten
+    public static func haus(_ klasse: String, _ haeuser: [String: [String]]) -> String {
+        func norm(_ s: String) -> String { s.lowercased().replacingOccurrences(of: " ", with: "") }
+        let k = norm(String(klasse.split(separator: "–").first ?? ""))
+        guard !k.isEmpty else { return "" }
+        return haeuser.sorted { $0.key < $1.key }.first { $0.value.contains { norm($0) == k } }?.key ?? ""
+    }
+
+    /// „Haus 1: 1a, 1b“ je Zeile ↔ Wörterbuch (für das Einstellungsfeld)
+    public static func haeuser(text: String) -> [String: [String]] {
+        var h: [String: [String]] = [:]
+        for zeile in text.split(whereSeparator: \.isNewline) {
+            let teile = zeile.split(separator: ":", maxSplits: 1)
+            guard teile.count == 2 else { continue }
+            let name = teile[0].trimmingCharacters(in: .whitespaces)
+            let klassen = teile[1].split(whereSeparator: { ",; ".contains($0) }).map(String.init).filter { !$0.isEmpty }
+            if !name.isEmpty && !klassen.isEmpty { h[name] = klassen }
+        }
+        return h
+    }
+    public static func text(haeuser: [String: [String]]) -> String {
+        haeuser.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.joined(separator: ", "))" }.joined(separator: "\n")
+    }
+
     // MARK: Ordner (Nextcloud-Freigabe, nur lesen)
 
     /// "https://host/s/TOKEN" → (host, token)
@@ -45,10 +83,10 @@ public enum Vertretung {
     /// Der Plan für heute (Wochenende: Freitag): Datum im Dateinamen zählt am meisten, dann ein bloßer Wochentag
     /// (als dieser Tag der aktuellen Woche), das Datum im Dokument nur als Notlösung (Word-Feld = Speichertag).
     /// Bei Gleichstand gewinnt der Plan mit mehr Einträgen, dann die zuletzt gespeicherte Datei.
-    public static func laden(link: String, kuerzel: String, jetzt: Date = Date()) async throws -> VertretungsPlan {
+    public static func laden(link: String, kuerzel: String, passwort: String = "", jetzt: Date = Date()) async throws -> VertretungsPlan {
         guard let teile = zerlege(link) else { throw URLError(.badURL) }
         let host = teile.host, token = teile.token
-        let auth = "Basic " + Data("\(token):".utf8).base64EncodedString()
+        let auth = "Basic " + Data("\(token):\(passwort)".utf8).base64EncodedString()
         let propfind = Data(#"<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/></d:prop></d:propfind>"#.utf8)
         var basis = "\(host)/public.php/dav/files/\(token)/"
         var (d, s) = try await Netz.daten(URL(string: basis)!, methode: "PROPFIND", kopf: ["Authorization": auth, "Depth": "1"], koerper: propfind)
@@ -56,6 +94,7 @@ public enum Vertretung {
             basis = "\(host)/public.php/webdav/"
             (d, s) = try await Netz.daten(URL(string: basis)!, methode: "PROPFIND", kopf: ["Authorization": auth, "Depth": "1"], koerper: propfind)
         }
+        if s == 401 { throw URLError(.userAuthenticationRequired) }
         guard s == 207 else { throw URLError(.cannotConnectToHost) }
         let ziel = zielTag(jetzt)
         let reihe = reihenfolge(wordDateien(String(decoding: d, as: UTF8.self)), ziel: ziel)
@@ -257,11 +296,15 @@ public enum Vertretung {
             }
             let pausen = z.filter { $0.text.range(of: #"^\d\.\s*[Pp]ause$"#, options: .regularExpression) != nil }
             if !pausen.isEmpty { pausenSpalten = pausen; continue }
-            if let sp = pausenSpalten, !k.isEmpty {
+            // Ab der Pausen-Rubrik keine Stunden mehr (auch nicht für „belegt“)
+            if let sp = pausenSpalten {
+                guard !k.isEmpty else { continue }
                 let ort = z.filter { $0.bis <= sp[0].von + 5 && !$0.text.isEmpty }.last?.text ?? ""
                 for s in sp {
                     if let c = z.first(where: { $0.mitte >= Double(s.von) && $0.mitte < Double(s.bis) }), hat(c.text, k) {
-                        p.pausen.append(.init(pause: s.text, ort: ort))
+                        let name = s.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                        let reserve = c.text.range(of: #"\(\s*"# + NSRegularExpression.escapedPattern(for: k) + #"\s*\)"#, options: [.regularExpression, .caseInsensitive]) != nil
+                        p.pausen.append(.init(pause: name, ort: ort, reserve: reserve))
                     }
                 }
                 continue

@@ -32,12 +32,23 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var kuerzel = ""
     public var termine = true
     public var erinnerungen = true
+    /// Häuser der Klassen („Haus 1“: [1a, 1b]) – damit die Vertretung sagt, wohin
+    public var haeuser: [String: [String]] = [:]
+    /// Speiseplan der Kantine (PCA-Portal; Passwort im Schlüsselbund)
+    public var mensa = false
+    public var mensaAdresse = ""
+    public var mensaBenutzer = ""
+    /// Öffentlicher Kalender mit den Schulobst-Tagen (ICS-Link)
+    public var obst = false
+    public var obstKalender = ""
+    /// Farbton von App und Widget (siehe Farbton im App-Teil)
+    public var farbton = "morgenrot"
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
-             nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen
+             nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -51,7 +62,14 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         haAdresse = w(.haAdresse, s.haAdresse); nacht = w(.nacht, s.nacht); morgen = w(.morgen, s.morgen); post = w(.post, s.post)
         vertretung = w(.vertretung, s.vertretung); vertretungLink = w(.vertretungLink, s.vertretungLink); kuerzel = w(.kuerzel, s.kuerzel)
         termine = w(.termine, s.termine); erinnerungen = w(.erinnerungen, s.erinnerungen)
+        haeuser = w(.haeuser, s.haeuser); mensa = w(.mensa, s.mensa); mensaAdresse = w(.mensaAdresse, s.mensaAdresse)
+        mensaBenutzer = w(.mensaBenutzer, s.mensaBenutzer); obst = w(.obst, s.obst); obstKalender = w(.obstKalender, s.obstKalender)
+        farbton = w(.farbton, s.farbton)
     }
+
+    /// Ist der Speiseplan vollständig eingerichtet (Passwort extra)?
+    public var mensaBereit: Bool { mensa && !mensaAdresse.isEmpty && !mensaBenutzer.isEmpty }
+    public var obstBereit: Bool { obst && !obstKalender.isEmpty }
 
     public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
     public static func aus(json: String) -> MorgenEinstellungen? { try? JSONDecoder().decode(MorgenEinstellungen.self, from: Data(json.utf8)) }
@@ -66,9 +84,20 @@ public enum MorgenAblage {
     public static func einstellungen(_ d: UserDefaults = defaults) -> MorgenEinstellungen? {
         d.string(forKey: "einstellungen").flatMap(MorgenEinstellungen.aus(json:))
     }
-    public static func speichern(_ e: MorgenEinstellungen, token: String, _ d: UserDefaults = defaults) {
+    public static func speichern(_ e: MorgenEinstellungen, token: String, geheim: Geheimnisse = Geheimnisse(), _ d: UserDefaults = defaults) {
         d.set(e.json(), forKey: "einstellungen")
         d.set(token, forKey: "token")
+        d.set(geheim.json(), forKey: "geheim")
     }
     public static func token(_ d: UserDefaults = defaults) -> String { d.string(forKey: "token") ?? "" }
+    public static func geheim(_ d: UserDefaults = defaults) -> Geheimnisse { d.string(forKey: "geheim").flatMap(Geheimnisse.aus(json:)) ?? Geheimnisse() }
+}
+
+/// Weitere Passwörter (Kantine, Freigabe des Vertretungsplans) – in der App im Schlüsselbund, fürs Widget mit übergeben
+public struct Geheimnisse: Codable, Hashable, Sendable {
+    public var mensa = ""
+    public var freigabe = ""
+    public init(mensa: String = "", freigabe: String = "") { self.mensa = mensa; self.freigabe = freigabe }
+    public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
+    public static func aus(json: String) -> Geheimnisse? { try? JSONDecoder().decode(Geheimnisse.self, from: Data(json.utf8)) }
 }
