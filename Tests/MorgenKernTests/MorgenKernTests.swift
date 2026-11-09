@@ -175,6 +175,7 @@ final class MorgenKernTests: XCTestCase {
         var e = MorgenEinstellungen()
         let pw = imp!.anwenden(&e)
         XCTAssertEqual(e.kuerzel, "Sta"); XCTAssertTrue(e.mensa); XCTAssertEqual(e.favoriten, "Pizza"); XCTAssertEqual(pw.mensa, "geheim")
+        XCTAssertEqual(pw.iserv, "")
         XCTAssertEqual(e.haeuser["Haus 1"], ["1a"])
     }
 
@@ -192,6 +193,61 @@ final class MorgenKernTests: XCTestCase {
         XCTAssertTrue(Takt.morgenFenster(tag(2026, 11, 9, 7, 20)))
         XCTAssertFalse(Takt.morgenFenster(tag(2026, 11, 9, 8, 0)))
         XCTAssertEqual(Zeit.vereinigt([(tag(2026, 11, 9, 0), tag(2026, 11, 9, 2)), (tag(2026, 11, 9, 1), tag(2026, 11, 9, 3))]), 3 * 3600)
+    }
+
+    func testTotp() {
+        // RFC 6238, Anhang B (SHA-1): Zeit 59 s → 94287082 (letzte 6 Stellen)
+        XCTAssertEqual(IServ.totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", zeit: Date(timeIntervalSince1970: 59)), "287082")
+        XCTAssertEqual(IServ.totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", zeit: Date(timeIntervalSince1970: 1111111109)), "081804")
+        XCTAssertEqual(IServ.bereinige("https://Schule.de/iserv/app"), "schule.de")
+    }
+
+    func testAbwesenheiten() {
+        let csv = "Nachname;Vorname;Klasse;Zeitraum;Status\nMuster;Mia;2a;09.11.2026 - 11.11.2026;entschuldigt\nBeispiel;Tom;2b;10.11.2026 (08:00 - 10:00);krank\nAlt;Ali;2a;01.10.2026;krank\n"
+        let seite = IServ.Seite(body: csv, url: "https://x/iserv/absence/.csv", status: 200, typ: "text/csv")
+        let l = Abwesenheiten.lesen(seite, spalten: [])!
+        XCTAssertEqual(l.count, 3)
+        XCTAssertEqual(l[0].name, "Mia Muster"); XCTAssertEqual(l[0].von, "2026-11-09"); XCTAssertEqual(l[0].bis, "2026-11-11"); XCTAssertEqual(l[0].art, "entschuldigt")
+        XCTAssertEqual(l[1].stunden, "8–10 Uhr"); XCTAssertTrue(l[1].stundenweise)
+        let di = tag(2026, 11, 10)
+        let heute = Abwesenheiten.amTag(l, ziel: di)
+        XCTAssertEqual(heute.map(\.name), ["Mia Muster", "Tom Beispiel"]) // ganztägig zuerst
+        XCTAssertEqual(Abwesenheiten.amTag(l, ziel: di, klassen: ["2B"]).map(\.name), ["Tom Beispiel"])
+        XCTAssertEqual(Abwesenheiten.zeitText(l[0], ziel: di, jetzt: tag(2026, 11, 10, 7)), "seit Mo · bis Mi")
+        XCTAssertEqual(Abwesenheiten.zeitText(l[0], ziel: tag(2026, 11, 11), jetzt: tag(2026, 11, 11, 7)), "seit Mo · ab morgen da")
+        XCTAssertEqual(Abwesenheiten.zeitText(l[1], ziel: di), "8–10 Uhr")
+        XCTAssertEqual(Abwesenheiten.kurzName("Mia Muster"), "Mia M.")
+        // HTML-Tabelle
+        let html = "<table><tr><th>Schüler</th><th>Klasse</th><th>Von</th><th>Bis</th><th>Grund</th></tr><tr><td>Muster, Mia</td><td>2a</td><td>09.11.2026</td><td>09.11.2026</td><td>beurlaubt</td></tr></table>"
+        let t = Abwesenheiten.lesen(IServ.Seite(body: html, url: "https://x", status: 200, typ: "text/html"), spalten: [])!
+        XCTAssertEqual(t.first?.name, "Mia Muster"); XCTAssertEqual(t.first?.art, "beurlaubt")
+    }
+
+    func testStoerungenUndAufgaben() {
+        let html = "<table><tr><th>Titel</th><th>Raum</th><th>Erstellt von</th><th>Erstellt</th><th>Status</th><th>Bearbeiter</th></tr>"
+            + "<tr><td><a href=\"/iserv/defect/7\">Beamer kaputt</a></td><td>A12</td><td>Stark, Anna</td><td>09.11.2026, 08:15</td><td>Neu</td><td>-</td></tr>"
+            + "<tr><td>Drucker</td><td>B1</td><td>Kim</td><td>08.11.2026</td><td>Erledigt</td><td>Hausmeister</td></tr></table>"
+        let l = Stoerungen.lesen(IServ.Seite(body: html, url: "https://schule.de/iserv/defect", status: 200, typ: "text/html"), spalten: [])!
+        XCTAssertEqual(l.count, 2)
+        XCTAssertEqual(l[0].autor, "Anna Stark"); XCTAssertEqual(l[0].ort, "A12"); XCTAssertTrue(l[0].unbesetzt); XCTAssertEqual(l[0].url, "https://schule.de/iserv/defect/7")
+        XCTAssertTrue(l[1].erledigt)
+        XCTAssertEqual(StoerungenStand(meldungen: l).offen.map(\.titel), ["Beamer kaputt"])
+        XCTAssertEqual(Stoerungen.zeit("09.11.2026, 08:15"), tag(2026, 11, 9, 8, 15))
+        XCTAssertEqual(Aufgaben.kategorie("In Bearbeitung"), 2)
+        XCTAssertEqual(Aufgaben.kategorie("Zu erledigen"), 1)
+        XCTAssertEqual(Aufgaben.kategorie("Erledigt ✓"), 4)
+        XCTAssertEqual(Aufgaben.kategorie("Material"), -1)
+        XCTAssertEqual(Aufgaben.farbNorm("#76A5AF"), "76a5af")
+        let k: [String: Any] = ["title": "", "blocks": [["block_type": "text", "position": 2, "data": ["text": "<p><b>Arbeitsblatt</b> kopieren</p>"]],
+                                                       ["block_type": "link", "position": 1, "data": ["url": "https://example.de", "title": "Material"]]]]
+        let inhalt = Aufgaben.inhaltAus(k)
+        XCTAssertEqual(inhalt.map(\.typ), ["link", "text"])
+        XCTAssertEqual(Aufgaben.textAus(k, inhalt).0, "Arbeitsblatt kopieren")
+        XCTAssertEqual(Gericht(menue: "Menü 1", text: "Spaghetti Bolognese").emoji, "🍝")
+        XCTAssertEqual(Gericht(menue: "Menü 2", text: "Gemüsecurry (vegan)").merkmale, ["🌱 vegan"])
+        let tg = MensaTag(datum: "2026-11-09", gerichte: [Gericht(menue: "Menü 1", text: "Pizza"), Gericht(menue: "Menü 2", text: "Bowl")])
+        XCTAssertEqual(tg.haupt(gut: ["bowl"])?.menue, "Menü 2")
+        XCTAssertEqual(tg.haupt(schlecht: ["PIZZA"])?.menue, "Menü 2")
     }
 
     func testEinstellungenAlteDaten() {

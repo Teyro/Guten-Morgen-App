@@ -34,6 +34,10 @@ struct MorgenEintrag: TimelineEntry {
     var farbton = "morgenrot"
     /// „heute“, „morgen“ oder „Montag“
     var schulName = "heute"
+    /// Kinder, die fehlen (schon mit Sichtschutz), offene Störungen, offene Aufgaben – nil = Modul aus
+    var kinder: [String]?
+    var stoerungen: Int?
+    var aufgaben: Int?
 
     /// Kurze Schul-Zeilen: „2. Vertretung 2c · Haus 2“, „1.P Aufsicht Hof“, „🍎 Schulobst“
     var schulZeilen: [(marke: String, text: String)] {
@@ -138,10 +142,37 @@ struct MorgenZeitleiste: TimelineProvider {
             d.set(Array(neu), forKey: "obst")
             d.set(jetzt.timeIntervalSince1970, forKey: "obstStand")
         }
+        // IServ (Abwesenheiten, Störungen): höchstens alle 30 Minuten; ohne 2FA-Schlüssel nur, solange die Sitzung hält
+        let iz = IServZugang(server: e.iservServer, benutzer: e.iservBenutzer, passwort: geheim.iserv, totp: geheim.totp)
+        let merkmal = Mensa.merkmal(e.iservServer + "|" + e.iservBenutzer, geheim.iserv)
+        var abw = d.data(forKey: "abwesend").flatMap { try? JSONDecoder().decode(AbwesenheitenStand.self, from: $0) }
+        var stoe = d.data(forKey: "stoerungen").flatMap { try? JSONDecoder().decode(StoerungenStand.self, from: $0) }
+        if (e.abwesenheiten || e.stoerungen), iz.vollstaendig, d.string(forKey: "iservAbgelehnt") != merkmal, stand("iservStand") > (Takt.morgenFenster(jetzt) ? 600 : 1800) {
+            d.set(jetzt.timeIntervalSince1970, forKey: "iservStand")
+            let s = IServ(iz, erlaubteHosts: Set(e.iservHosts))
+            do {
+                if e.abwesenheiten {
+                    let (st, _) = try await Abwesenheiten.laden(s, quelle: e.abwesendQuelle)
+                    abw = st; d.set(try? JSONEncoder().encode(st), forKey: "abwesend")
+                }
+                if e.stoerungen {
+                    let (st, _) = try await Stoerungen.laden(s, quelle: e.stoerungQuelle)
+                    stoe = st; d.set(try? JSONEncoder().encode(st), forKey: "stoerungen")
+                }
+            } catch IServFehler.zugangsdaten(_) { d.set(merkmal, forKey: "iservAbgelehnt") } catch {}
+        }
+        // Aufgaben: höchstens alle 3 Stunden
+        var auf = d.data(forKey: "aufgaben").flatMap { try? JSONDecoder().decode(AufgabenStand.self, from: $0) }
+        if e.aufgaben, !geheim.edupool.isEmpty, stand("aufgabenStand") > 3 * 3600 {
+            d.set(jetzt.timeIntervalSince1970, forKey: "aufgabenStand")
+            if let st = try? await Aufgaben.laden(token: geheim.edupool, farbe: e.aufgabenFarbe) { auf = st; d.set(try? JSONEncoder().encode(st), forKey: "aufgaben") }
+        }
+        let kinder = abw.map { Abwesenheiten.amTag($0.eintraege, ziel: schulTag, klassen: e.klassenListe).map { e.sichtschutz ? Abwesenheiten.kurzName($0.name) : $0.name } }
         return MorgenEintrag(date: jetzt, eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p,
                              heute: tagesTermine, vertretung: e.vertretung ? plan : nil, haeuser: e.haeuser,
                              mensa: e.mensa ? mensaPlan?.tag(ziel) : nil, mensaWahl: (e.favoriten, e.meiden), gemerkt: (e.lieblingsGerichte, e.nichtLecker),
-                             obst: e.obstBereit && obstTage.contains(ziel), farbton: e.farbton, schulName: Tagwahl.name(schulTag, jetzt: jetzt))
+                             obst: e.obstBereit && obstTage.contains(ziel), farbton: e.farbton, schulName: Tagwahl.name(schulTag, jetzt: jetzt),
+                             kinder: e.abwesenheiten ? kinder : nil, stoerungen: e.stoerungen ? stoe?.offen.count : nil, aufgaben: e.aufgaben ? auf?.offen.count : nil)
     }
 }
 
@@ -239,6 +270,20 @@ struct MorgenWidgetAnsicht: View {
         }
     }
 
+    /// Kinder fehlen · Störungen · Aufgaben – je ein Kasten, antippen öffnet die Liste
+    private var zahlen: some View {
+        HStack(spacing: 6) {
+            if let k = e.kinder {
+                kasten("Fehlen", "person.crop.circle.badge.xmark", ziel: "abwesend") {
+                    Text("\(k.count)").font(.headline.monospacedDigit())
+                    if !k.isEmpty { Text(k.prefix(2).joined(separator: ", ")).font(.caption2).lineLimit(1).opacity(0.85) }
+                }
+            }
+            if let s = e.stoerungen { kasten("Störungen", "wrench.and.screwdriver.fill", ziel: "stoerungen") { Text("\(s)").font(.headline.monospacedDigit()) } }
+            if let a = e.aufgaben { kasten("Aufgaben", "checklist", ziel: "aufgaben") { Text("\(a)").font(.headline.monospacedDigit()) } }
+        }
+    }
+
     // MARK: Größen
 
     private var klein: some View {
@@ -274,6 +319,8 @@ struct MorgenWidgetAnsicht: View {
         .foregroundStyle(.white)
     }
 
+    private var zahlenDa: Bool { e.kinder != nil || e.stoerungen != nil || e.aufgaben != nil }
+
     private var gross: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top) {
@@ -288,19 +335,20 @@ struct MorgenWidgetAnsicht: View {
                 }
             }
             if !e.schulZeilen.isEmpty {
-                kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(4).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
+                kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(zahlenDa ? 3 : 4).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
             }
             if let m = e.essen { kasten("Mensa " + e.schulName, "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(2) } }
+            if zahlenDa { zahlen }
             kasten("Termine " + e.schulName, "calendar", ziel: "termine") {
                 if e.heute.isEmpty { Text("Keine Termine").font(.caption).opacity(0.8) }
-                ForEach(Array(e.heute.prefix(3).enumerated()), id: \.offset) { _, t in
+                ForEach(Array(e.heute.prefix(zahlenDa ? 2 : 3).enumerated()), id: \.offset) { _, t in
                     HStack(spacing: 8) {
                         Text(t.ganztags ? "ganzt." : t.start.uhrzeit).font(.caption.monospacedDigit()).opacity(0.85).frame(width: 42, alignment: .leading)
                         Text(t.titel).font(.caption.weight(.semibold)).lineLimit(1)
                     }
                 }
             }
-            if !e.post.isEmpty { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(2) } }
+            if !e.post.isEmpty && !zahlenDa { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(2) } }
             Spacer(minLength: 0)
         }
         .foregroundStyle(.white)

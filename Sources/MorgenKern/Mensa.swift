@@ -132,7 +132,7 @@ public enum Mensa {
     }
 
     // Abgelehnte Zugangsdaten nicht immer wieder probieren (sonst sperrt das Portal das Konto) – erst nach einer Änderung
-    static func merkmal(_ benutzer: String, _ passwort: String) -> String { String((benutzer + "\u{1}" + passwort).utf8.reduce(UInt64(5381)) { ($0 << 5) &+ $0 &+ UInt64($1) }) }
+    public static func merkmal(_ benutzer: String, _ passwort: String) -> String { String((benutzer + "\u{1}" + passwort).utf8.reduce(UInt64(5381)) { ($0 << 5) &+ $0 &+ UInt64($1) }) }
     public static func darfAnmelden(_ d: UserDefaults, benutzer: String, passwort: String) -> Bool {
         d.string(forKey: "mensaAbgelehnt") != merkmal(benutzer, passwort)
     }

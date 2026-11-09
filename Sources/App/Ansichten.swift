@@ -6,6 +6,7 @@ struct HauptAnsicht: View {
     @Bindable var kern: Kern
     @Environment(\.scenePhase) private var phase
     @State private var pfad: [Bereich] = []
+    @State private var code = ""
 
     var body: some View {
         NavigationStack(path: $pfad) {
@@ -34,6 +35,9 @@ struct HauptAnsicht: View {
             .navigationDestination(for: Bereich.self) { b in
                 switch b {
                 case .mensa: MensaAnsicht(kern: kern)
+                case .abwesend: AbwesendAnsicht(kern: kern)
+                case .stoerungen: StoerungenAnsicht(kern: kern)
+                case .aufgaben: AufgabenAnsicht(kern: kern)
                 default: VertretungAnsicht(kern: kern)
                 }
             }
@@ -42,6 +46,15 @@ struct HauptAnsicht: View {
                 Button("Übernehmen") { if let i = kern.importAnfrage { kern.importAnfrage = nil; Task { await kern.importieren(i) } } }
                 Button("Abbrechen", role: .cancel) { kern.importAnfrage = nil }
             } message: { Text((kern.importAnfrage?.zusammenfassung ?? []).joined(separator: ", ") + ". Vorhandene Einstellungen werden ersetzt.") }
+            .alert("Zwei-Faktor-Code", isPresented: Binding(get: { kern.codeHinweis != nil }, set: { if !$0 && kern.codeHinweis != nil { kern.codeEingegeben(nil) } })) {
+                TextField("123456", text: $code).keyboardType(.numberPad)
+                Button("Anmelden") { kern.codeEingegeben(code); code = "" }
+                Button("Abbrechen", role: .cancel) { kern.codeEingegeben(nil); code = "" }
+            } message: { Text(kern.codeHinweis ?? "") }
+            .alert("Anmeldung über \(kern.hostFrage ?? "")?", isPresented: Binding(get: { kern.hostFrage != nil }, set: { if !$0 { kern.hostFrage = nil } })) {
+                Button("Ja, erlauben") { if let h = kern.hostFrage { Task { await kern.hostErlauben(h) } } }
+                Button("Abbrechen", role: .cancel) { kern.hostFrage = nil }
+            } message: { Text("IServ schickt die Anmeldung weiter an \(kern.hostFrage ?? ""). Nur bestätigen, wenn das eure bekannte Anmeldeseite ist (z. B. Schuldock).") }
             .fullScreenCover(isPresented: $kern.nachtOffen) { NachtAnsicht(kern: kern, musik: kern.musik) }
             .overlay(alignment: .bottom) {
                 if !kern.meldung.isEmpty {
@@ -55,7 +68,7 @@ struct HauptAnsicht: View {
         // Sprung aus dem Widget: Speiseplan oder Vertretung gleich öffnen
         .onChange(of: kern.bereich) { _, b in
             guard let b else { return }
-            if b == .mensa || b == .vertretung { pfad = [b] } else { pfad = [] }
+            if [.mensa, .vertretung, .abwesend, .stoerungen, .aufgaben].contains(b) { pfad = [b] } else { pfad = [] }
             kern.bereich = nil
         }
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
@@ -64,7 +77,7 @@ struct HauptAnsicht: View {
     /// Schul-Karte nur, wenn etwas davon eingerichtet ist
     private var zeigeSchule: Bool {
         let e = kern.einstellungen
-        return (e.vertretung && !e.vertretungLink.isEmpty) || e.mensa || e.obstBereit
+        return (e.vertretung && !e.vertretungLink.isEmpty) || e.mensa || e.obstBereit || e.abwesenheiten || e.stoerungen || e.aufgaben
     }
 
     private var kopf: some View {
@@ -226,16 +239,26 @@ struct SchuleKarte: View {
             if e.mensa {
                 Button { oeffne(.mensa) } label: { mensa(e) }.buttonStyle(.plain)
             }
-            // Was es (noch) nur in Mein Tag gibt: dort öffnen
-            HStack(spacing: 8) {
-                ForEach([("Abwesenheiten", "abwesend", "person.crop.circle.badge.xmark"), ("Störungen", "stoerungen", "wrench.and.screwdriver"), ("Aufgaben", "aufgaben", "checklist")], id: \.1) { t in
-                    Button { if let u = kern.meinTagURL(t.1) { oeffneURL(u) } } label: {
-                        Label(t.0, systemImage: t.2).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                            .frame(maxWidth: .infinity).padding(.vertical, 8).background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }.buttonStyle(.plain)
+            // Kinder, Störungen, Aufgaben: Zahlen-Kacheln, antippen öffnet die Liste
+            let kacheln: [(Bereich, String, String, String, Color)] = [
+                e.abwesenheiten ? (.abwesend, "person.crop.circle.badge.xmark", kern.abwesend.map { "\(Abwesenheiten.amTag($0.eintraege, ziel: kern.schulTag, klassen: e.klassenListe).count)" } ?? (kern.abwesendFehler.isEmpty ? "…" : "!"), "Kinder fehlen", Color.red) : nil,
+                e.stoerungen ? (.stoerungen, "wrench.and.screwdriver.fill", kern.stoerungen.map { "\($0.offen.count)" } ?? (kern.stoerungenFehler.isEmpty ? "…" : "!"), "Störungen", Color.orange) : nil,
+                e.aufgaben ? (.aufgaben, "checklist", kern.aufgaben.map { "\($0.offen.count)" } ?? (kern.aufgabenFehler.isEmpty ? "…" : "!"), "Aufgaben", Color.teal) : nil,
+            ].compactMap { $0 }
+            if !kacheln.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(kacheln, id: \.0) { k in
+                        Button { oeffne(k.0) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) { Image(systemName: k.1).foregroundStyle(k.4); Text(k.2).font(.title3.weight(.bold).monospacedDigit()) }
+                                Text(k.3).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(10).glas(14)
+                        }.buttonStyle(.plain)
+                    }
                 }
+                .padding(.top, 2)
             }
-            .padding(.top, 2)
         }
     }
 
@@ -307,6 +330,7 @@ struct EinstellungenAnsicht: View {
     @Bindable var kern: Kern
     @Environment(\.dismiss) private var schliessen
     @State private var haeuserText = ""
+    @Environment(\.openURL) private var oeffneURL
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
     var body: some View {
@@ -405,6 +429,36 @@ struct EinstellungenAnsicht: View {
                 Toggle("Schlaf aus Apple Health", isOn: $k.einstellungen.gesundheit)
                     .onChange(of: kern.einstellungen.gesundheit) { _, an in if an { Task { _ = await Gesundheit.erlauben(); await kern.aktualisieren() } } }
             } header: { Text("Apple Health") } footer: { Text("Zeigt morgens, wie lange du geschlafen hast, und trägt den Nachtmodus als Schlaf („im Bett“) in Health ein.") }
+
+            Section {
+                Toggle("Abwesenheiten (Kinder)", isOn: $k.einstellungen.abwesenheiten)
+                Toggle("Störungsmeldungen", isOn: $k.einstellungen.stoerungen)
+                if kern.einstellungen.abwesenheiten || kern.einstellungen.stoerungen {
+                    TextField("IServ-Adresse, z. B. schule.de", text: $k.einstellungen.iservServer).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    TextField("Benutzername", text: $k.einstellungen.iservBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("Passwort", text: $k.iservPasswort)
+                    SecureField("2FA-Schlüssel (optional)", text: $k.totpGeheim)
+                    if kern.einstellungen.abwesenheiten {
+                        TextField("Nur Klassen, z. B. 2a, 2b (leer = alle)", text: $k.einstellungen.abwesendKlassen).textInputAutocapitalization(.never)
+                        Toggle("Sichtschutz im Widget (nur Vorname + Initiale)", isOn: $k.einstellungen.sichtschutz)
+                    }
+                    if !kern.einstellungen.iservHosts.isEmpty { LabeledContent("Bestätigte Anmeldeseiten", value: kern.einstellungen.iservHosts.joined(separator: ", ")) }
+                    Button("Neu suchen (Module erkunden)") { k.einstellungen.abwesendQuelle = nil; k.einstellungen.stoerungQuelle = nil; Task { await kern.moduleLaden(erzwingen: true) } }
+                }
+            } header: { Text("IServ") } footer: { Text("Wie in den Skripten Abwesenheiten und Störungen. Mit 2FA-Schlüssel (Text unter dem QR-Code beim Einrichten der Zwei-Faktor-Anmeldung) erzeugt die App die Codes selbst – sonst fragt sie danach, und das Widget zeigt nur den letzten Stand. Achtung: Passwort und zweiter Faktor liegen dann auf demselben Gerät. Abwesenheiten werden nur angezeigt, nicht ausgewertet.") }
+
+            Section {
+                if kern.edupoolToken.isEmpty {
+                    Button(kern.edupoolCode == nil ? "Mit Edupool Boards verbinden" : "Warte auf Bestätigung (Code \(kern.edupoolCode!)) …") {
+                        if kern.edupoolCode == nil { Task { await kern.edupoolVerbinden { u in oeffneURL(u) } } }
+                    }
+                    if kern.edupoolCode != nil { Button("Abbrechen", role: .cancel) { kern.edupoolCode = nil } }
+                } else {
+                    Toggle("Aufgaben zeigen", isOn: $k.einstellungen.aufgaben)
+                    TextField("Kartenfarbe deiner Aufgaben", text: $k.einstellungen.aufgabenFarbe).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("Verbindung trennen", role: .destructive) { k.edupoolToken = ""; k.aufgaben = nil; k.einstellungen.aufgaben = false }
+                }
+            } header: { Text("Edupool-Aufgaben") } footer: { Text("Verbinden öffnet die Freigabeseite von Edupool Boards mit eingetragenem Code: anmelden, nur „Lesen“ anhaken, Laufzeit wählen (bis 90 Tage), bestätigen und zurück in die App. Dein Passwort sieht die App nie.") }
 
             Section {
                 TextField("Name des Skripts", text: $k.einstellungen.meinTagSkript).textInputAutocapitalization(.never).autocorrectionDisabled()

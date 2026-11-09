@@ -15,7 +15,31 @@ final class Kern {
     var token: String { didSet { if !vorschau { Schluesselbund.speichern(token, "token"); speichern() } } }
     var mensaPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(mensaPasswort, "mensa"); speichern() } } }
     var freigabePasswort: String { didSet { if !vorschau { Schluesselbund.speichern(freigabePasswort, "freigabe"); speichern() } } }
-    var geheim: Geheimnisse { Geheimnisse(mensa: mensaPasswort, freigabe: freigabePasswort) }
+    var iservPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(iservPasswort, "iserv"); speichern() } } }
+    var totpGeheim: String { didSet { if !vorschau { Schluesselbund.speichern(totpGeheim, "totp"); speichern() } } }
+    var edupoolToken: String { didSet { if !vorschau { Schluesselbund.speichern(edupoolToken, "edupool"); speichern() } } }
+    var geheim: Geheimnisse { Geheimnisse(mensa: mensaPasswort, freigabe: freigabePasswort, iserv: iservPasswort, totp: totpGeheim, edupool: edupoolToken) }
+
+    // Module aus Mein Tag (nativ): zuletzt geladener Stand bleibt gespeichert (Anzeige sofort, Aufgaben auch offline)
+    var abwesend: AbwesenheitenStand? { didSet { merke(abwesend, "abwesendStand") } }
+    var abwesendFehler = ""
+    var stoerungen: StoerungenStand? { didSet { merke(stoerungen, "stoerungenStand") } }
+    var stoerungenFehler = ""
+    var aufgaben: AufgabenStand? { didSet { merke(aufgaben, "aufgabenStand") } }
+    var aufgabenFehler = ""
+    /// Zwei-Faktor-Code von Hand: Hinweis für das Eingabefenster, Antwort über die Fortsetzung
+    var codeHinweis: String?
+    @ObservationIgnored var codeWarten: CheckedContinuation<String?, Never>?
+    /// Neue Anmeldeseite (z. B. Schuldock) muss einmal bestätigt werden
+    var hostFrage: String?
+    /// Edupool verbinden: angezeigter Code, solange gewartet wird
+    var edupoolCode: String?
+
+    private func merke<T: Encodable>(_ w: T?, _ k: String) {
+        guard !vorschau else { return }
+        if let w { UserDefaults.standard.set(try? JSONEncoder().encode(w), forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) }
+    }
+    private static func gemerkt<T: Decodable>(_ k: String) -> T? { UserDefaults.standard.data(forKey: k).flatMap { try? JSONDecoder().decode(T.self, from: $0) } }
     var farbton: Farbton { Farbton.zu(einstellungen.farbton) }
 
     var wetter: Wetter?
@@ -57,6 +81,7 @@ final class Kern {
             token = ""
             mensaPasswort = ""
             freigabePasswort = ""
+            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""
             vorschauDaten()
             return
         }
@@ -64,6 +89,12 @@ final class Kern {
         token = Schluesselbund.lesen("token") ?? ""
         mensaPasswort = Schluesselbund.lesen("mensa") ?? ""
         freigabePasswort = Schluesselbund.lesen("freigabe") ?? ""
+        iservPasswort = Schluesselbund.lesen("iserv") ?? ""
+        totpGeheim = Schluesselbund.lesen("totp") ?? ""
+        edupoolToken = Schluesselbund.lesen("edupool") ?? ""
+        abwesend = Kern.gemerkt("abwesendStand")
+        stoerungen = Kern.gemerkt("stoerungenStand")
+        aufgaben = Kern.gemerkt("aufgabenStand")
     }
 
     var ha: HomeAssistant { HomeAssistant(adresse: einstellungen.haAdresse, token: token) }
@@ -126,6 +157,7 @@ final class Kern {
         }
         if let tage = await o { obstTage = tage } else if !e.obstBereit { obstTage = [] }
         schlaf = await s
+        await moduleLaden()
         if e.weckerAutomatisch && Wecker.verfuegbar { await weckerStellen(still: true) }
         await widgetUebergeben()
     }
@@ -189,8 +221,111 @@ final class Kern {
         einstellungen = e
         if !pw.mensa.isEmpty { mensaPasswort = pw.mensa }
         if !pw.freigabe.isEmpty { freigabePasswort = pw.freigabe }
+        if !pw.iserv.isEmpty { iservPasswort = pw.iserv }
+        if !pw.totp.isEmpty { totpGeheim = pw.totp }
+        if !pw.edupool.isEmpty { edupoolToken = pw.edupool }
         meldung = "Aus Mein Tag übernommen"
         await aktualisieren()
+    }
+
+    // MARK: Abwesenheiten, Störungen (IServ), Aufgaben (Edupool)
+
+    var iservZugang: IServZugang { IServZugang(server: einstellungen.iservServer, benutzer: einstellungen.iservBenutzer, passwort: iservPasswort, totp: totpGeheim) }
+
+    /// Eine IServ-Sitzung; der Zwei-Faktor-Code wird – falls nötig und kein Schlüssel hinterlegt – hier abgefragt
+    private func iservSitzung() -> IServ {
+        IServ(iservZugang, erlaubteHosts: Set(einstellungen.iservHosts)) { [weak self] hinweis in
+            await withCheckedContinuation { (k: CheckedContinuation<String?, Never>) in
+                Task { @MainActor in
+                    guard let self else { k.resume(returning: nil); return }
+                    self.codeWarten?.resume(returning: nil)
+                    self.codeWarten = k
+                    self.codeHinweis = hinweis.isEmpty ? "6-stelligen Code aus deiner Authenticator-App eingeben." : hinweis
+                }
+            }
+        }
+    }
+
+    /// Antwort aus dem Code-Fenster (nil = abgebrochen)
+    func codeEingegeben(_ code: String?) {
+        codeHinweis = nil
+        codeWarten?.resume(returning: code)
+        codeWarten = nil
+    }
+
+    func hostErlauben(_ h: String) async {
+        if !einstellungen.iservHosts.contains(h) { einstellungen.iservHosts.append(h) }
+        hostFrage = nil
+        await moduleLaden(erzwingen: true)
+    }
+
+    /// Abgelehnte IServ-Zugangsdaten nicht immer wieder probieren (Kontosperre) – erst nach einer Änderung
+    private var iservMerkmal: String { Mensa.merkmal(einstellungen.iservServer + "|" + einstellungen.iservBenutzer, iservPasswort) }
+
+    func moduleLaden(erzwingen: Bool = false) async {
+        guard !vorschau else { return }
+        let e = einstellungen
+        let d = UserDefaults.standard
+        let alt = { (k: String, min: Double) in erzwingen || Date().timeIntervalSince1970 - d.double(forKey: k) > min * 60 }
+        if (e.abwesenheiten || e.stoerungen) && iservZugang.vollstaendig {
+            if d.string(forKey: "iservAbgelehnt") == iservMerkmal && !erzwingen {
+                abwesendFehler = "IServ hat die Zugangsdaten abgelehnt – bitte prüfen."; stoerungenFehler = abwesendFehler
+            } else {
+                let s = iservSitzung()
+                func fehler(_ f: Error) -> String {
+                    if let i = f as? IServFehler {
+                        if case .zugangsdaten = i { d.set(iservMerkmal, forKey: "iservAbgelehnt") }
+                        if case .neuerHost(let h) = i { hostFrage = h }
+                        return i.localizedDescription
+                    }
+                    return "IServ nicht erreichbar"
+                }
+                if e.abwesenheiten && alt("abwesendGeladen", 10) {
+                    do {
+                        let (st, q) = try await Abwesenheiten.laden(s, quelle: e.abwesendQuelle)
+                        abwesend = st; abwesendFehler = ""
+                        if q != e.abwesendQuelle { einstellungen.abwesendQuelle = q }
+                        d.set(Date().timeIntervalSince1970, forKey: "abwesendGeladen")
+                        d.removeObject(forKey: "iservAbgelehnt")
+                    } catch { abwesendFehler = fehler(error) }
+                }
+                if e.stoerungen && alt("stoerungenGeladen", 15) {
+                    do {
+                        let (st, q) = try await Stoerungen.laden(s, quelle: e.stoerungQuelle)
+                        stoerungen = st; stoerungenFehler = ""
+                        if q != e.stoerungQuelle { einstellungen.stoerungQuelle = q }
+                        d.set(Date().timeIntervalSince1970, forKey: "stoerungenGeladen")
+                    } catch { stoerungenFehler = fehler(error) }
+                }
+            }
+        }
+        if e.aufgaben && !edupoolToken.isEmpty && alt("aufgabenGeladen", 30) {
+            do {
+                aufgaben = try await Aufgaben.laden(token: edupoolToken, farbe: e.aufgabenFarbe)
+                aufgabenFehler = ""
+                d.set(Date().timeIntervalSince1970, forKey: "aufgabenGeladen")
+            } catch { aufgabenFehler = error.localizedDescription }
+        }
+    }
+
+    /// Edupool verbinden: Code holen, Freigabeseite öffnen, dann abholen (bis bestätigt oder abgelaufen)
+    func edupoolVerbinden(oeffne: (URL) -> Void) async {
+        do {
+            let f = try await Aufgaben.freigabeStarten()
+            edupoolCode = f.userCode
+            oeffne(f.seite)
+            while Date() < f.ablauf, edupoolCode != nil {
+                try? await Task.sleep(nanoseconds: UInt64(f.intervall * 1_000_000_000))
+                if let t = try await Aufgaben.freigabeAbholen(f) {
+                    edupoolToken = t; einstellungen.aufgaben = true; edupoolCode = nil
+                    meldung = "Mit Edupool verbunden"
+                    await moduleLaden(erzwingen: true)
+                    return
+                }
+            }
+            if edupoolCode != nil { meldung = "Der Code ist abgelaufen – bitte noch einmal verbinden." }
+        } catch { meldung = error.localizedDescription }
+        edupoolCode = nil
     }
 
     /// Abwesenheiten, Störungen, Aufgaben: das Modul in Mein Tag (Scriptable) öffnen
@@ -262,6 +397,6 @@ func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T
 
 /// Bereiche, die das Widget direkt öffnet
 enum Bereich: String, Identifiable, Hashable {
-    case mensa, vertretung, termine, wetter, post
+    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben
     var id: String { rawValue }
 }

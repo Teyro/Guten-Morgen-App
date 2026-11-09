@@ -49,6 +49,23 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     /// Mit ⭐ / 👎 gemerkte Gerichte (genauer Text, wie im Kantinen-Skript)
     public var lieblingsGerichte: [String] = []
     public var nichtLecker: [String] = []
+    /// IServ (Abwesenheiten, Störungen) – Passwort und 2FA-Schlüssel im Schlüsselbund
+    public var iservServer = ""
+    public var iservBenutzer = ""
+    /// Bestätigte Anmeldeseiten außerhalb von IServ (z. B. Schuldock)
+    public var iservHosts: [String] = []
+    public var abwesenheiten = false
+    /// Nur diese Klassen („2a, 2b“), leer = alle
+    public var abwesendKlassen = ""
+    /// Widget: nur Vorname + Initiale
+    public var sichtschutz = true
+    public var abwesendQuelle: IServQuelle?
+    public var stoerungen = false
+    public var erledigteZeigen = false
+    public var stoerungQuelle: IServQuelle?
+    /// Edupool-Aufgaben (Token im Schlüsselbund)
+    public var aufgaben = false
+    public var aufgabenFarbe = "#76a5af"
     /// Kollegium: Kürzel → Name (aus Mein Tag übernommen) – für „Es fehlen“
     public var kollegium: [String: String] = [:]
     /// Name des Scriptable-Skripts für Abwesenheiten, Störungen und Aufgaben
@@ -61,7 +78,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
-             favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker
+             favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
+             iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -81,11 +99,18 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         favoriten = w(.favoriten, s.favoriten); meiden = w(.meiden, s.meiden); kollegium = w(.kollegium, s.kollegium)
         meinTagSkript = w(.meinTagSkript, s.meinTagSkript); gesundheit = w(.gesundheit, s.gesundheit)
         lieblingsGerichte = w(.lieblingsGerichte, s.lieblingsGerichte); nichtLecker = w(.nichtLecker, s.nichtLecker)
+        iservServer = w(.iservServer, s.iservServer); iservBenutzer = w(.iservBenutzer, s.iservBenutzer); iservHosts = w(.iservHosts, s.iservHosts)
+        abwesenheiten = w(.abwesenheiten, s.abwesenheiten); abwesendKlassen = w(.abwesendKlassen, s.abwesendKlassen); sichtschutz = w(.sichtschutz, s.sichtschutz)
+        abwesendQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .abwesendQuelle)) ?? nil
+        stoerungen = w(.stoerungen, s.stoerungen); erledigteZeigen = w(.erledigteZeigen, s.erledigteZeigen)
+        stoerungQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .stoerungQuelle)) ?? nil
+        aufgaben = w(.aufgaben, s.aufgaben); aufgabenFarbe = w(.aufgabenFarbe, s.aufgabenFarbe)
     }
 
     /// Ist der Speiseplan vollständig eingerichtet (Passwort extra)?
     public var mensaBereit: Bool { mensa && !mensaAdresse.isEmpty && !mensaBenutzer.isEmpty }
     public var obstBereit: Bool { obst && !obstKalender.isEmpty }
+    public var klassenListe: [String] { abwesendKlassen.split(whereSeparator: { ",; ".contains($0) }).map(String.init) }
 
     public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
     public static func aus(json: String) -> MorgenEinstellungen? { try? JSONDecoder().decode(MorgenEinstellungen.self, from: Data(json.utf8)) }
@@ -113,7 +138,17 @@ public enum MorgenAblage {
 public struct Geheimnisse: Codable, Hashable, Sendable {
     public var mensa = ""
     public var freigabe = ""
-    public init(mensa: String = "", freigabe: String = "") { self.mensa = mensa; self.freigabe = freigabe }
+    public var iserv = ""
+    public var totp = ""
+    public var edupool = ""
+    public init(mensa: String = "", freigabe: String = "", iserv: String = "", totp: String = "", edupool: String = "") {
+        self.mensa = mensa; self.freigabe = freigabe; self.iserv = iserv; self.totp = totp; self.edupool = edupool
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func w(_ k: CodingKeys) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? nil ?? "" }
+        mensa = w(.mensa); freigabe = w(.freigabe); iserv = w(.iserv); totp = w(.totp); edupool = w(.edupool)
+    }
     public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
     public static func aus(json: String) -> Geheimnisse? { try? JSONDecoder().decode(Geheimnisse.self, from: Data(json.utf8)) }
 }
@@ -129,6 +164,10 @@ public struct ImportDaten: Codable, Sendable {
     public var obstKalender: String?
     public var skript: String?
     public var kantine: Kantine?
+    public struct IServDaten: Codable, Sendable { public var server: String?; public var benutzer: String?; public var passwort: String?; public var totp: String?; public var klassen: String? }
+    public var iserv: IServDaten?
+    public struct Edupool: Codable, Sendable { public var token: String?; public var farbe: String? }
+    public var edupool: Edupool?
 
     public static func aus(url: URL) -> ImportDaten? {
         guard let d = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "d" })?.value else { return nil }
@@ -148,11 +187,13 @@ public struct ImportDaten: Codable, Sendable {
         if let o = obstKalender, !o.isEmpty { t.append("Schulobst-Kalender") }
         if let m = kantine, m.benutzer?.isEmpty == false { t.append("Kantine (\(m.benutzer!))") }
         if let f = kantine?.favoriten, !f.isEmpty { t.append("Lieblingsessen") }
+        if let i = iserv, i.benutzer?.isEmpty == false { t.append("IServ (\(i.benutzer!)" + (i.totp?.isEmpty == false ? ", mit 2FA-Schlüssel" : "") + ")") }
+        if edupool?.token?.isEmpty == false { t.append("Edupool-Freigabe") }
         return t
     }
 
-    /// In die Einstellungen übernehmen; Rückgabe: Passwörter (Kantine, Freigabe) – leer = unverändert
-    public func anwenden(_ e: inout MorgenEinstellungen) -> (mensa: String, freigabe: String) {
+    /// In die Einstellungen übernehmen; Rückgabe: Passwörter – leer = unverändert
+    public func anwenden(_ e: inout MorgenEinstellungen) -> Geheimnisse {
         if let k = kuerzel, !k.isEmpty { e.kuerzel = k }
         if let l = link, !l.isEmpty { e.vertretungLink = l; e.vertretung = true }
         if let h = haeuser, !h.isEmpty { e.haeuser = h }
@@ -167,6 +208,13 @@ public struct ImportDaten: Codable, Sendable {
             if let g = m.gut, !g.isEmpty { e.lieblingsGerichte = g }
             if let s = m.schlecht, !s.isEmpty { e.nichtLecker = s }
         }
-        return (kantine?.passwort ?? "", passwort ?? "")
+        if let i = iserv {
+            if let s = i.server, !s.isEmpty { e.iservServer = IServ.bereinige(s) }
+            if let b = i.benutzer, !b.isEmpty { e.iservBenutzer = b; e.abwesenheiten = true; e.stoerungen = true }
+            if let k = i.klassen { e.abwesendKlassen = k }
+        }
+        if let f = edupool?.farbe, !f.isEmpty { e.aufgabenFarbe = f }
+        if edupool?.token?.isEmpty == false { e.aufgaben = true }
+        return Geheimnisse(mensa: kantine?.passwort ?? "", freigabe: passwort ?? "", iserv: iserv?.passwort ?? "", totp: iserv?.totp ?? "", edupool: edupool?.token ?? "")
     }
 }
