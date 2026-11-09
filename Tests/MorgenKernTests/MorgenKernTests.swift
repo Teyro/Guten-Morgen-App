@@ -154,6 +154,46 @@ final class MorgenKernTests: XCTestCase {
         XCTAssertTrue(s.contains("Heute kommt Schulobst.") && s.contains("In der Mensa gibt es Pizza."), s)
     }
 
+    func testTagwahlUndKantine() {
+        // Montag 15:59 → heute, 16:00 → Dienstag; Freitag 17 Uhr → Montag; Samstag früh → Montag
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 9, 15, 59))), "2026-11-09")
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 9, 16, 0))), "2026-11-10")
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 13, 17))), "2026-11-16")
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 14, 8))), "2026-11-16")
+        let frei = [FreierTag(von: "2026-11-10", bis: "2026-11-10", name: "Studientag", ferien: false)]
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 9, 18), frei: frei)), "2026-11-11")
+        XCTAssertEqual(Mensa.guthabenAus("<div id=\"balancePanel\">GUTHABEN (GESAMT) 20,00 € Verfügbar: 1.012,40 € Reservierte Speisen: 7,60 €</div>"), 1012.40)
+        let t = MensaTag(datum: "2026-11-09", gerichte: [Gericht(menue: "Menü 1", text: "Schweinebraten", zusatz: "2,3"),
+                                                          Gericht(menue: "Menü 2", text: "Nudeln mit Tomatensoße", zusatz: "A")])
+        XCTAssertEqual(t.haupt(meiden: "schwein")?.menue, "Menü 2")
+        XCTAssertEqual(t.haupt(favoriten: "Braten")?.menue, "Menü 1")
+        XCTAssertEqual(t.haupt(meiden: "tomate")?.menue, "Menü 1")
+        let json = #"{"kuerzel":"Sta","link":"https://c.example/s/AbC","haeuser":{"Haus 1":["1a"]},"kantine":{"benutzer":"max","passwort":"geheim","favoriten":"Pizza"}}"#
+        let b = Data(json.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let imp = ImportDaten.aus(url: URL(string: "gutenmorgen://import?d=\(b)")!)
+        XCTAssertNotNil(imp)
+        var e = MorgenEinstellungen()
+        let pw = imp!.anwenden(&e)
+        XCTAssertEqual(e.kuerzel, "Sta"); XCTAssertTrue(e.mensa); XCTAssertEqual(e.favoriten, "Pizza"); XCTAssertEqual(pw.mensa, "geheim")
+        XCTAssertEqual(e.haeuser["Haus 1"], ["1a"])
+    }
+
+    func testTakt() {
+        let ohne: (ClosedRange<Double>) -> Double = { _ in 0 }
+        XCTAssertEqual(Takt.naechste(nach: tag(2026, 11, 9, 6, 30), zufall: ohne), tag(2026, 11, 9, 7, 0))
+        XCTAssertEqual(Takt.naechste(nach: tag(2026, 11, 9, 7, 0), zufall: ohne), tag(2026, 11, 9, 7, 10))
+        XCTAssertEqual(Takt.naechste(nach: tag(2026, 11, 9, 7, 45), zufall: ohne), tag(2026, 11, 9, 7, 50))
+        XCTAssertEqual(Takt.naechste(nach: tag(2026, 11, 9, 7, 51), zufall: ohne), tag(2026, 11, 9, 8, 51)) // danach stündlich
+        XCTAssertEqual(Takt.naechste(nach: tag(2026, 11, 9, 15, 30), zufall: ohne), tag(2026, 11, 9, 16, 0))
+        XCTAssertEqual(Takt.naechste(nach: tag(2026, 11, 14, 6, 30), zufall: ohne), tag(2026, 11, 14, 7, 30)) // Samstag: kein Morgentakt
+        // Versatz: höchstens ±1 Minute
+        let d = Takt.naechste(nach: tag(2026, 11, 9, 6, 30), zufall: { $0.upperBound })
+        XCTAssertEqual(d, tag(2026, 11, 9, 7, 1))
+        XCTAssertTrue(Takt.morgenFenster(tag(2026, 11, 9, 7, 20)))
+        XCTAssertFalse(Takt.morgenFenster(tag(2026, 11, 9, 8, 0)))
+        XCTAssertEqual(Zeit.vereinigt([(tag(2026, 11, 9, 0), tag(2026, 11, 9, 2)), (tag(2026, 11, 9, 1), tag(2026, 11, 9, 3))]), 3 * 3600)
+    }
+
     func testEinstellungenAlteDaten() {
         let e = MorgenEinstellungen.aus(json: #"{"vorlauf": 60}"#)
         XCTAssertEqual(e?.vorlauf, 60)

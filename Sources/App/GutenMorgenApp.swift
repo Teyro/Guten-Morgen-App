@@ -13,6 +13,10 @@ struct GutenMorgenApp: App {
                     switch url.host {
                     case "vorlesen": Task { await kern.briefingVorlesen() }
                     case "gutenacht": Task { await kern.guteNacht() }
+                    // aus Mein Tag: Einstellungen übernehmen (mit Rückfrage)
+                    case "import": kern.importAnfrage = ImportDaten.aus(url: url)
+                    // aus dem Widget: Bereich öffnen
+                    case let b?: kern.bereich = Bereich(rawValue: b)
                     default: break
                     }
                 }

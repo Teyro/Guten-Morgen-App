@@ -23,7 +23,10 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var fehlt = false
     public var ausserHaus = false
     public var hinweise: [String] = []
+    /// Die ganze „Wichtig“-Zelle (für alle)
+    public var alleHinweise: [String] = []
     public var fehlen: [String] = []
+    public var ausserListe: [String] = []
     public var datei = ""
     /// Wie viele Zellen im Stundenteil ausgefüllt sind (leere Vorlage = 0)
     public var belegt = 0
@@ -83,7 +86,7 @@ public enum Vertretung {
     /// Der Plan für heute (Wochenende: Freitag): Datum im Dateinamen zählt am meisten, dann ein bloßer Wochentag
     /// (als dieser Tag der aktuellen Woche), das Datum im Dokument nur als Notlösung (Word-Feld = Speichertag).
     /// Bei Gleichstand gewinnt der Plan mit mehr Einträgen, dann die zuletzt gespeicherte Datei.
-    public static func laden(link: String, kuerzel: String, passwort: String = "", jetzt: Date = Date()) async throws -> VertretungsPlan {
+    public static func laden(link: String, kuerzel: String, passwort: String = "", jetzt: Date = Date(), ziel zielVorgabe: String? = nil) async throws -> VertretungsPlan {
         guard let teile = zerlege(link) else { throw URLError(.badURL) }
         let host = teile.host, token = teile.token
         let auth = "Basic " + Data("\(token):\(passwort)".utf8).base64EncodedString()
@@ -96,7 +99,7 @@ public enum Vertretung {
         }
         if s == 401 { throw URLError(.userAuthenticationRequired) }
         guard s == 207 else { throw URLError(.cannotConnectToHost) }
-        let ziel = zielTag(jetzt)
+        let ziel = zielVorgabe ?? zielTag(jetzt)
         let reihe = reihenfolge(wordDateien(String(decoding: d, as: UTF8.self)), ziel: ziel)
         var beste: (plan: VertretungsPlan, wert: (Int, Double, Int, Double))?
         for k in reihe.prefix(4) {
@@ -289,10 +292,13 @@ public enum Vertretung {
                 p.fehlen = kuerzelListe(s); if !k.isEmpty && hat(s, k) { p.fehlt = true }; continue
             }
             if t.hasPrefix("außer haus") || t.hasPrefix("ausser haus") {
+                p.ausserListe = kuerzelListe(z.dropFirst().map(\.text).joined(separator: " "))
                 if !k.isEmpty && z.dropFirst().contains(where: { hat($0.text, k) }) { p.ausserHaus = true }; continue
             }
-            if t.hasPrefix("wichtig"), z.count > 1, !k.isEmpty {
-                p.hinweise += treffer(#"<w:p[ >][\s\S]*?</w:p>"#, z[1].xml, gruppe: 0).map(text).filter { !$0.isEmpty && hat($0, k) }
+            if t.hasPrefix("wichtig"), z.count > 1 {
+                let absaetze = treffer(#"<w:p[ >][\s\S]*?</w:p>"#, z[1].xml, gruppe: 0).map(text).filter { !$0.isEmpty }
+                p.alleHinweise += absaetze
+                if !k.isEmpty { p.hinweise += absaetze.filter { hat($0, k) } }
             }
             let pausen = z.filter { $0.text.range(of: #"^\d\.\s*[Pp]ause$"#, options: .regularExpression) != nil }
             if !pausen.isEmpty { pausenSpalten = pausen; continue }

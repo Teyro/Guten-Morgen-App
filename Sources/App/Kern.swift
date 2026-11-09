@@ -25,10 +25,21 @@ final class Kern {
     var post = ""
     var vertretung: VertretungsPlan?
     var vertretungFehler = ""
-    var mensa: MensaTag?
+    var mensaPlan: MensaPlan?
     var mensaFehler = ""
-    var obstHeute = false
+    var obstTage: Set<String> = []
+    var schlaf: TimeInterval?
     var laedt = false
+    /// Sprungziel aus dem Widget (gutenmorgen://mensa …)
+    var bereich: Bereich?
+    /// Wartende Übernahme aus Mein Tag (wird erst nach Rückfrage angewendet)
+    var importAnfrage: ImportDaten?
+
+    /// Für welchen Tag die Schul-Infos gelten: bis 16 Uhr heute, danach der nächste Schultag
+    var schulTag: Date { Tagwahl.ziel(Date(), frei: frei) }
+    var schulTagName: String { Tagwahl.name(schulTag) }
+    var mensa: MensaTag? { mensaPlan?.tag(Zeit.iso(schulTag)) }
+    var obstHeute: Bool { obstTage.contains(Zeit.iso(schulTag)) }
     var meldung = ""
     var weckerText = ""
     var einstellungenOffen = false
@@ -92,10 +103,12 @@ final class Kern {
         if let neu = await f { frei = neu }
         post = await p
         let pw = freigabePasswort, mpw = mensaPasswort
+        let ziel = Zeit.iso(schulTag)
         async let v: Result<VertretungsPlan, Error>? = e.vertretung && !e.vertretungLink.isEmpty && !e.kuerzel.isEmpty
-            ? await versuch { try await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel, passwort: pw) } : nil
-        async let m: Result<MensaTag?, Error>? = e.mensaBereit && !mpw.isEmpty
-            ? await versuch { try await Mensa.laden(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: mpw, ziel: Mensa.zielTag()) } : nil
+            ? await versuch { try await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel, passwort: pw, ziel: ziel) } : nil
+        async let m: Result<MensaPlan, Error>? = e.mensaBereit && !mpw.isEmpty
+            ? await versuch { try await Mensa.ladePlan(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: mpw) } : nil
+        async let s: TimeInterval? = e.gesundheit ? await Gesundheit.schlafLetzteNacht() : nil
         async let o: Set<String>? = e.obstBereit ? try? await SchulKalender.laden(e.obstKalender) : nil
         switch await v {
         case .success(let p)?: vertretung = p; vertretungFehler = ""
@@ -103,11 +116,12 @@ final class Kern {
         case nil: vertretung = nil; vertretungFehler = ""
         }
         switch await m {
-        case .success(let t)?: mensa = t; mensaFehler = t == nil ? "Für heute steht nichts im Speiseplan" : ""
+        case .success(let t)?: mensaPlan = t; mensaFehler = t.tag(ziel) == nil ? "Für \(schulTagName) steht nichts im Speiseplan" : ""
         case .failure(let f)?: mensaFehler = f.localizedDescription
-        case nil: mensa = nil; mensaFehler = e.mensa && mpw.isEmpty ? "Kantinen-Passwort fehlt" : ""
+        case nil: mensaPlan = nil; mensaFehler = e.mensa && mpw.isEmpty ? "Kantinen-Passwort fehlt" : ""
         }
-        if let tage = await o { obstHeute = tage.contains(Zeit.iso(Date())) } else if !e.obstBereit { obstHeute = false }
+        if let tage = await o { obstTage = tage } else if !e.obstBereit { obstTage = [] }
+        schlaf = await s
         if e.weckerAutomatisch && Wecker.verfuegbar { await weckerStellen(still: true) }
         await widgetUebergeben()
     }
@@ -119,6 +133,8 @@ final class Kern {
         d.wetter = wetter; d.termine = termine; d.erinnerungen = erinnerungen; d.post = post
         d.vertretung = einstellungen.vertretung ? vertretung : nil; d.frei = freiHeute
         d.haeuser = einstellungen.haeuser; d.mensa = einstellungen.mensa ? mensa : nil; d.obst = einstellungen.obst && obstHeute
+        d.schulTag = schulTag; d.schlaf = schlaf
+        d.mensaWahl = (einstellungen.favoriten, einstellungen.meiden)
         return Briefing.morgen(d)
     }
 
@@ -147,13 +163,35 @@ final class Kern {
 
     /// Nachtmodus: der normale Wecker rückt als Sicherheit 5 Minuten nach hinten (zuerst spielt die Weckmusik)
     func nachtVorbereiten() async {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "nachtBeginn")
+        if einstellungen.gesundheit { _ = await Gesundheit.erlauben() }
         guard Wecker.verfuegbar, let d = naechsterWecker.datum else { return }
         weckerText = await Wecker.stellen(d.addingTimeInterval(300))
     }
 
     /// Nach dem Aufstehen (oder Abbruch): den Wecker für den nächsten Tag stellen
     func nachtVorbei() async {
+        let beginn = UserDefaults.standard.double(forKey: "nachtBeginn")
+        UserDefaults.standard.removeObject(forKey: "nachtBeginn")
+        if einstellungen.gesundheit, beginn > 0 { await Gesundheit.nachtEintragen(von: Date(timeIntervalSince1970: beginn), bis: Date()) }
         if Wecker.verfuegbar && einstellungen.weckerAutomatisch { await weckerStellen(still: true) }
+    }
+
+    /// Übernahme aus Mein Tag anwenden (nach Bestätigung)
+    func importieren(_ i: ImportDaten) async {
+        var e = einstellungen
+        let pw = i.anwenden(&e)
+        einstellungen = e
+        if !pw.mensa.isEmpty { mensaPasswort = pw.mensa }
+        if !pw.freigabe.isEmpty { freigabePasswort = pw.freigabe }
+        meldung = "Aus Mein Tag übernommen"
+        await aktualisieren()
+    }
+
+    /// Abwesenheiten, Störungen, Aufgaben: das Modul in Mein Tag (Scriptable) öffnen
+    func meinTagURL(_ modul: String) -> URL? {
+        let name = einstellungen.meinTagSkript.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "Mein-Tag"
+        return URL(string: "scriptable:///run/\(name)?modul=\(modul)")
     }
 
     func weckerStellen(still: Bool = false) async {
@@ -205,8 +243,9 @@ final class Kern {
         einstellungen.haeuser = ["Haus 2": ["2a", "2b", "2c"]]
         einstellungen.mensa = true; einstellungen.obst = true
         einstellungen.vertretungLink = "https://cloud.example.de/s/Beispiel"; einstellungen.obstKalender = "https://example.de/obst.ics"
-        mensa = MensaTag(datum: Zeit.iso(Date()), gerichte: [Gericht(menue: "Menü 1", text: "Spaghetti Bolognese", bestellt: true), Gericht(menue: "Menü 2", text: "Gemüsecurry mit Reis")])
-        obstHeute = true
+        mensaPlan = MensaPlan(tage: [MensaTag(datum: Zeit.iso(schulTag), gerichte: [Gericht(menue: "Menü 1", text: "Spaghetti Bolognese", bestellt: true), Gericht(menue: "Menü 2", text: "Gemüsecurry mit Reis")])], guthaben: 23.4)
+        obstTage = [Zeit.iso(schulTag)]
+        schlaf = 7 * 3600 + 12 * 60
         weckerText = "Wecker gestellt: Dienstag, 06:15 Uhr"
     }
 }
@@ -214,4 +253,10 @@ final class Kern {
 /// Fehler als Wert (für async let mit Ergebnis oder Fehler)
 func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T, Error> {
     do { return .success(try await f()) } catch { return .failure(error) }
+}
+
+/// Bereiche, die das Widget direkt öffnet
+enum Bereich: String, Identifiable, Hashable {
+    case mensa, vertretung, termine, wetter, post
+    var id: String { rawValue }
 }

@@ -11,6 +11,11 @@ public struct BriefingDaten: Sendable {
     public var haeuser: [String: [String]] = [:]
     public var mensa: MensaTag?
     public var obst = false
+    /// Tag, für den Vertretung/Mensa/Obst gelten (ab 16 Uhr der nächste Schultag); nil = heute
+    public var schulTag: Date?
+    public var schlaf: TimeInterval?
+    /// Kantine: Lieblingsessen und Meiden (Stichwörter)
+    public var mensaWahl: (favoriten: String, meiden: String) = ("", "")
     public var frei: FreierTag?
     public var wecker: Weckzeit?
     public var offeneFenster: [String] = []
@@ -36,6 +41,10 @@ public enum Briefing {
         let f = DateFormatter(); f.locale = Locale(identifier: "de_DE"); f.dateFormat = "EEEE, d. MMMM"
         s.append("\(gruss)! Heute ist \(f.string(from: d.jetzt)), es ist \(uhr(d.jetzt)).")
         if let frei = d.frei { s.append(frei.ferien ? "Es sind \(frei.name)." : "Heute ist \(frei.name).") }
+        if let z = d.schlaf, h < 12 {
+            let m = Int(z / 60)
+            s.append("Du hast \(m / 60) Stunden\(m % 60 > 0 ? " und \(m % 60) Minuten" : "") geschlafen.")
+        }
         if let w = d.wetter { s.append(w.satz()) }
         let heute = d.termine.filter { k.isDate($0.start, inSameDayAs: d.jetzt) }
         let ganz = heute.filter(\.ganztags).map(\.titel)
@@ -48,10 +57,20 @@ public enum Briefing {
             s.append(d.erinnerungen.count == 1 ? "Eine Erinnerung ist fällig: \(d.erinnerungen[0])." : "\(d.erinnerungen.count) Erinnerungen sind fällig, zum Beispiel: \(aufzaehlen(Array(d.erinnerungen.prefix(3))))." )
         }
         if !d.post.isEmpty { s.append(d.post) }
-        let schultag = d.frei == nil && (2...6).contains(k.component(.weekday, from: d.jetzt))
-        if let v = d.vertretung, schultag { s.append(v.satz(haeuser: d.haeuser)) }
-        if schultag && d.obst { s.append("Heute kommt Schulobst.") }
-        if let m = d.mensa, schultag, m.datum == Zeit.iso(d.jetzt) { s.append(m.satz()) }
+        // Schul-Infos: heute – oder (ab 16 Uhr) schon für den nächsten Schultag
+        let tag = d.schulTag ?? d.jetzt
+        let heute = k.isDate(tag, inSameDayAs: d.jetzt)
+        let schultag = heute ? d.frei == nil && (2...6).contains(k.component(.weekday, from: d.jetzt)) : true
+        let wann = heute ? "" : (k.isDate(tag, inSameDayAs: k.date(byAdding: .day, value: 1, to: d.jetzt) ?? d.jetzt) ? "Morgen" : "Am " + Zeit.wochentag(tag))
+        var schule: [String] = []
+        if let v = d.vertretung, schultag, v.datum == nil || v.datum == Zeit.iso(tag) { schule.append(v.satz(haeuser: d.haeuser)) }
+        if schultag && d.obst { schule.append(heute ? "Heute kommt Schulobst." : "Es kommt Schulobst.") }
+        if let m = d.mensa, schultag, m.datum == Zeit.iso(tag) {
+            var mm = m
+            if let h = m.haupt(favoriten: d.mensaWahl.favoriten, meiden: d.mensaWahl.meiden) { mm.gerichte = [h] }
+            schule.append(mm.satz(heute: heute))
+        }
+        if !schule.isEmpty { s.append((wann.isEmpty ? "" : wann + ": ") + schule.joined(separator: " ")) }
         s.append(h < 18 ? "Einen schönen Tag!" : "Einen schönen Abend!")
         return s.filter { !$0.isEmpty }.joined(separator: " ")
     }

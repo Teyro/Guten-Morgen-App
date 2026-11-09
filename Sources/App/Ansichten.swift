@@ -5,14 +5,15 @@ import MorgenKern
 struct HauptAnsicht: View {
     @Bindable var kern: Kern
     @Environment(\.scenePhase) private var phase
+    @State private var pfad: [Bereich] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $pfad) {
             ScrollView {
                 VStack(spacing: 14) {
                     kopf
                     WeckerKarte(kern: kern)
-                    if zeigeSchule { SchuleKarte(kern: kern) }
+                    if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
                     if let w = kern.wetter { WetterKarte(wetter: w) }
                     if kern.einstellungen.termine { TermineKarte(termine: kern.termine.filter { Zeit.kalender.isDateInToday($0.start) }, erinnerungen: kern.erinnerungen) }
                     if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
@@ -30,7 +31,17 @@ struct HauptAnsicht: View {
                     Button { kern.einstellungenOffen = true } label: { Label("Einstellungen", systemImage: "gearshape") }
                 }
             }
+            .navigationDestination(for: Bereich.self) { b in
+                switch b {
+                case .mensa: MensaAnsicht(kern: kern)
+                default: VertretungAnsicht(kern: kern)
+                }
+            }
             .sheet(isPresented: $kern.einstellungenOffen) { NavigationStack { EinstellungenAnsicht(kern: kern) } }
+            .alert("Aus Mein Tag übernehmen?", isPresented: Binding(get: { kern.importAnfrage != nil }, set: { if !$0 { kern.importAnfrage = nil } })) {
+                Button("Übernehmen") { if let i = kern.importAnfrage { kern.importAnfrage = nil; Task { await kern.importieren(i) } } }
+                Button("Abbrechen", role: .cancel) { kern.importAnfrage = nil }
+            } message: { Text((kern.importAnfrage?.zusammenfassung ?? []).joined(separator: ", ") + ". Vorhandene Einstellungen werden ersetzt.") }
             .fullScreenCover(isPresented: $kern.nachtOffen) { NachtAnsicht(kern: kern, musik: kern.musik) }
             .overlay(alignment: .bottom) {
                 if !kern.meldung.isEmpty {
@@ -41,6 +52,12 @@ struct HauptAnsicht: View {
             }
         }
         .task { await kern.aktualisieren() }
+        // Sprung aus dem Widget: Speiseplan oder Vertretung gleich öffnen
+        .onChange(of: kern.bereich) { _, b in
+            guard let b else { return }
+            if b == .mensa || b == .vertretung { pfad = [b] } else { pfad = [] }
+            kern.bereich = nil
+        }
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
     }
 
@@ -150,6 +167,7 @@ struct WeckerKarte: View {
                 }
             }
             if !w.grund.isEmpty { Text(w.grund).font(.callout).foregroundStyle(.secondary) }
+            if let s = kern.schlaf { Label("Geschlafen: \(Gesundheit.text(s))", systemImage: "bed.double.fill").font(.callout).foregroundStyle(.secondary) }
             if !kern.weckerText.isEmpty { Text(kern.weckerText).font(.caption).foregroundStyle(.secondary) }
         }
     }
@@ -194,12 +212,35 @@ struct TermineKarte: View {
 /// Alles zur Schule heute: wo muss ich rein, Aufsicht, Schulobst, Mensa – wie die Übersicht in Mein Tag
 struct SchuleKarte: View {
     let kern: Kern
-    @State private var alleGerichte = false
+    let oeffne: (Bereich) -> Void
+    @Environment(\.openURL) private var oeffneURL
 
     var body: some View {
         let e = kern.einstellungen
-        Karte(symbol: "graduationcap.fill", farbe: .purple, titel: "Schule heute") {
+        Karte(symbol: "graduationcap.fill", farbe: .purple, titel: "Schule " + kern.schulTagName) {
             if e.vertretung && !e.vertretungLink.isEmpty {
+                Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e) } }.buttonStyle(.plain)
+            }
+            if e.obstBereit && kern.obstHeute {
+                Zeile(marke: "🍎", farbe: .green, titel: kern.schulTagName == "heute" ? "Heute kommt Schulobst" : "Schulobst kommt", unter: nil)
+            }
+            if e.mensa {
+                Button { oeffne(.mensa) } label: { mensa(e) }.buttonStyle(.plain)
+            }
+            // Was es (noch) nur in Mein Tag gibt: dort öffnen
+            HStack(spacing: 8) {
+                ForEach([("Abwesenheiten", "abwesend", "person.crop.circle.badge.xmark"), ("Störungen", "stoerungen", "wrench.and.screwdriver"), ("Aufgaben", "aufgaben", "checklist")], id: \.1) { t in
+                    Button { if let u = kern.meinTagURL(t.1) { oeffneURL(u) } } label: {
+                        Label(t.0, systemImage: t.2).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity).padding(.vertical, 8).background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder private func vertretung(_ e: MorgenEinstellungen) -> some View {
                 if let p = kern.vertretung {
                     if p.fehlt { Hinweis(text: "Du bist als fehlend eingetragen", farbe: .red) }
                     if p.ausserHaus { Hinweis(text: "Du bist außer Haus eingetragen", farbe: .orange) }
@@ -220,26 +261,17 @@ struct SchuleKarte: View {
                 } else if !kern.vertretungFehler.isEmpty {
                     Label(kern.vertretungFehler, systemImage: "wifi.exclamationmark").font(.callout).foregroundStyle(.secondary)
                 }
+    }
+
+    @ViewBuilder private func mensa(_ e: MorgenEinstellungen) -> some View {
+        if let m = kern.mensa {
+            if let f = m.frei {
+                Zeile(marke: "🍽", farbe: .gray, titel: "Mensa geschlossen", unter: f.isEmpty ? nil : f)
+            } else if let h = m.haupt(favoriten: e.favoriten, meiden: e.meiden) {
+                Zeile(marke: "🍽", farbe: .teal, titel: h.text, unter: (h.bestellt ? "Bestellt · " : "") + h.menue + " · Speiseplan ›")
             }
-            if e.obstBereit && kern.obstHeute {
-                Zeile(marke: "🍎", farbe: .green, titel: "Heute kommt Schulobst", unter: nil)
-            }
-            if e.mensa {
-                if let m = kern.mensa {
-                    if let f = m.frei {
-                        Zeile(marke: "🍽", farbe: .gray, titel: "Mensa geschlossen", unter: f.isEmpty ? nil : f)
-                    } else if let h = m.haupt {
-                        Button { alleGerichte.toggle() } label: {
-                            Zeile(marke: "🍽", farbe: .teal, titel: h.text, unter: (h.bestellt ? "Bestellt · " : "") + h.menue + (m.gerichte.count > 1 ? (alleGerichte ? "" : " · mehr …") : ""))
-                        }.buttonStyle(.plain)
-                        if alleGerichte {
-                            ForEach(m.gerichte.filter { $0 != h }, id: \.self) { g in Text("\(g.menue): \(g.text)").font(.callout).foregroundStyle(.secondary).padding(.leading, 52) }
-                        }
-                    }
-                } else if !kern.mensaFehler.isEmpty {
-                    Label(kern.mensaFehler, systemImage: "fork.knife").font(.callout).foregroundStyle(.secondary)
-                }
-            }
+        } else if !kern.mensaFehler.isEmpty {
+            Zeile(marke: "🍽", farbe: .gray, titel: "Speiseplan", unter: kern.mensaFehler)
         }
     }
 }
@@ -369,6 +401,16 @@ struct EinstellungenAnsicht: View {
             } header: { Text("Schulobst") } footer: { Text("Öffentlicher IServ-Kalender mit den Liefertagen (Kalender → Teilen → öffentlicher Link).") }
 
             WeckmusikAbschnitt(musik: kern.musik)
+
+            Section {
+                Toggle("Schlaf aus Apple Health", isOn: $k.einstellungen.gesundheit)
+                    .onChange(of: kern.einstellungen.gesundheit) { _, an in if an { Task { _ = await Gesundheit.erlauben(); await kern.aktualisieren() } } }
+            } header: { Text("Apple Health") } footer: { Text("Zeigt morgens, wie lange du geschlafen hast, und trägt den Nachtmodus als Schlaf („im Bett“) in Health ein.") }
+
+            Section {
+                TextField("Name des Skripts", text: $k.einstellungen.meinTagSkript).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if !kern.einstellungen.kollegium.isEmpty { LabeledContent("Kollegium", value: "\(kern.einstellungen.kollegium.count) Namen") }
+            } header: { Text("Mein Tag (Scriptable)") } footer: { Text("Abwesenheiten, Störungen und Aufgaben öffnen sich in Mein Tag. Übernehmen: in Scriptable Mein Tag öffnen → Menü → „An Guten Morgen übergeben“ – dann kommen Kürzel, Ordner, Häuser, Kollegium und Kantine (mit Passwort) herüber.") }
 
             Section("Kalender") {
                 Toggle("Termine", isOn: $k.einstellungen.termine)

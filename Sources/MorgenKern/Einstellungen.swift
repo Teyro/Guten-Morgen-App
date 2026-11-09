@@ -43,12 +43,22 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var obstKalender = ""
     /// Farbton von App und Widget (siehe Farbton im App-Teil)
     public var farbton = "morgenrot"
+    /// Kantine: Stichwörter für Lieblingsessen und zum Meiden (wie im Kantinen-Widget)
+    public var favoriten = ""
+    public var meiden = ""
+    /// Kollegium: Kürzel → Name (aus Mein Tag übernommen) – für „Es fehlen“
+    public var kollegium: [String: String] = [:]
+    /// Name des Scriptable-Skripts für Abwesenheiten, Störungen und Aufgaben
+    public var meinTagSkript = "Mein-Tag"
+    /// Schlaf aus Apple Health zeigen und den Nachtmodus als Schlaf eintragen
+    public var gesundheit = false
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
-             nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton
+             nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
+             favoriten, meiden, kollegium, meinTagSkript, gesundheit
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -65,6 +75,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         haeuser = w(.haeuser, s.haeuser); mensa = w(.mensa, s.mensa); mensaAdresse = w(.mensaAdresse, s.mensaAdresse)
         mensaBenutzer = w(.mensaBenutzer, s.mensaBenutzer); obst = w(.obst, s.obst); obstKalender = w(.obstKalender, s.obstKalender)
         farbton = w(.farbton, s.farbton)
+        favoriten = w(.favoriten, s.favoriten); meiden = w(.meiden, s.meiden); kollegium = w(.kollegium, s.kollegium)
+        meinTagSkript = w(.meinTagSkript, s.meinTagSkript); gesundheit = w(.gesundheit, s.gesundheit)
     }
 
     /// Ist der Speiseplan vollständig eingerichtet (Passwort extra)?
@@ -100,4 +112,55 @@ public struct Geheimnisse: Codable, Hashable, Sendable {
     public init(mensa: String = "", freigabe: String = "") { self.mensa = mensa; self.freigabe = freigabe }
     public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
     public static func aus(json: String) -> Geheimnisse? { try? JSONDecoder().decode(Geheimnisse.self, from: Data(json.utf8)) }
+}
+
+/// Übernahme aus Scriptable („Mein Tag → An Guten Morgen übergeben“): gutenmorgen://import?d=<base64url-JSON>
+public struct ImportDaten: Codable, Sendable {
+    public struct Kantine: Codable, Sendable { public var adresse: String?; public var benutzer: String?; public var passwort: String?; public var favoriten: String?; public var meiden: String? }
+    public var kuerzel: String?
+    public var link: String?
+    public var passwort: String?
+    public var haeuser: [String: [String]]?
+    public var kollegium: [String: String]?
+    public var obstKalender: String?
+    public var skript: String?
+    public var kantine: Kantine?
+
+    public static func aus(url: URL) -> ImportDaten? {
+        guard let d = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "d" })?.value else { return nil }
+        var b = d.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while b.count % 4 != 0 { b += "=" }
+        guard let daten = Data(base64Encoded: b) else { return nil }
+        return try? JSONDecoder().decode(ImportDaten.self, from: daten)
+    }
+
+    /// Kurze Liste, was übernommen wird (ohne Passwörter)
+    public var zusammenfassung: [String] {
+        var t: [String] = []
+        if let k = kuerzel, !k.isEmpty { t.append("Kürzel \(k)") }
+        if let l = link, !l.isEmpty { t.append("Vertretungsplan-Ordner") }
+        if let h = haeuser, !h.isEmpty { t.append("\(h.count) Häuser") }
+        if let k = kollegium, !k.isEmpty { t.append("\(k.count) Namen im Kollegium") }
+        if let o = obstKalender, !o.isEmpty { t.append("Schulobst-Kalender") }
+        if let m = kantine, m.benutzer?.isEmpty == false { t.append("Kantine (\(m.benutzer!))") }
+        if let f = kantine?.favoriten, !f.isEmpty { t.append("Lieblingsessen") }
+        return t
+    }
+
+    /// In die Einstellungen übernehmen; Rückgabe: Passwörter (Kantine, Freigabe) – leer = unverändert
+    public func anwenden(_ e: inout MorgenEinstellungen) -> (mensa: String, freigabe: String) {
+        if let k = kuerzel, !k.isEmpty { e.kuerzel = k }
+        if let l = link, !l.isEmpty { e.vertretungLink = l; e.vertretung = true }
+        if let h = haeuser, !h.isEmpty { e.haeuser = h }
+        if let k = kollegium, !k.isEmpty { e.kollegium = k }
+        if let o = obstKalender, !o.isEmpty { e.obstKalender = o; e.obst = true }
+        if let s = skript, !s.isEmpty { e.meinTagSkript = s }
+        if let m = kantine {
+            if let a = m.adresse, !a.isEmpty { e.mensaAdresse = a }
+            if let b = m.benutzer, !b.isEmpty { e.mensaBenutzer = b; e.mensa = true }
+            if let f = m.favoriten { e.favoriten = f }
+            if let x = m.meiden { e.meiden = x }
+        }
+        return (kantine?.passwort ?? "", passwort ?? "")
+    }
 }

@@ -29,6 +29,20 @@ public enum Zeit {
     }
     public static let wochentage = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"]
     public static func wochentag(_ d: Date) -> String { wochentage[(kalender.component(.weekday, from: d) - 1) % 7] }
+
+    /// Gesamtdauer mehrerer Zeiträume, Überschneidungen nur einmal (z. B. Schlaf von Uhr und iPhone)
+    public static func vereinigt(_ teile: [(Date, Date)]) -> TimeInterval {
+        var summe: TimeInterval = 0
+        var aktuell: (Date, Date)?
+        for t in teile.sorted(by: { $0.0 < $1.0 }) {
+            if let a = aktuell, t.0 <= a.1 { aktuell = (a.0, max(a.1, t.1)) } else {
+                if let a = aktuell { summe += a.1.timeIntervalSince(a.0) }
+                aktuell = t
+            }
+        }
+        if let a = aktuell { summe += a.1.timeIntervalSince(a.0) }
+        return summe
+    }
 }
 
 public extension Date {
@@ -39,5 +53,37 @@ public extension Date {
         f.timeZone = Zeit.kalender.timeZone
         f.dateFormat = "HH:mm"
         return f.string(from: self)
+    }
+}
+
+/// Wann Widget und App neu laden: Mo–Fr 7:00, 7:10 … 7:50 (je ±1 Minute und ein paar Sekunden versetzt,
+/// damit nicht alle Geräte im selben Moment die Server fragen), um 16 Uhr (Umschalten auf morgen), sonst stündlich.
+public enum Takt {
+    public static let morgenSlots = Array(stride(from: 7 * 60, through: 7 * 60 + 50, by: 10))
+
+    public static func naechste(nach jetzt: Date, zufall: (ClosedRange<Double>) -> Double = { Double.random(in: $0) }) -> Date {
+        let k = Zeit.kalender
+        let tag = k.startOfDay(for: jetzt)
+        var kandidaten: [Date] = [jetzt.addingTimeInterval(3600)]
+        for plus in 0...1 {
+            guard let t = k.date(byAdding: .day, value: plus, to: tag) else { continue }
+            let wt = k.component(.weekday, from: t)
+            if wt != 1 && wt != 7 {
+                for m in morgenSlots {
+                    let d = t.addingTimeInterval(Double(m * 60) + zufall(-60...60))
+                    if d > jetzt.addingTimeInterval(30) { kandidaten.append(d) }
+                }
+            }
+            if let um16 = k.date(bySettingHour: Tagwahl.umschaltStunde, minute: 0, second: Int(zufall(5...50)), of: t), um16 > jetzt { kandidaten.append(um16) }
+            if plus == 1 { kandidaten.append(t.addingTimeInterval(zufall(30...90))) } // kurz nach Mitternacht
+        }
+        return kandidaten.min()!
+    }
+
+    /// Liegt [jetzt] im Morgenfenster (6:55–7:55)? Dann Vertretung bei jedem Takt frisch holen.
+    public static func morgenFenster(_ jetzt: Date) -> Bool {
+        let k = Zeit.kalender
+        let m = k.component(.hour, from: jetzt) * 60 + k.component(.minute, from: jetzt)
+        return (6 * 60 + 55)...(7 * 60 + 55) ~= m
     }
 }

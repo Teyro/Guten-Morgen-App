@@ -8,7 +8,21 @@ public struct Gericht: Codable, Hashable, Sendable {
     public var menue: String      // „Menü 1“
     public var text: String       // „Spaghetti Bolognese“
     public var bestellt: Bool
-    public init(menue: String, text: String, bestellt: Bool = false) { self.menue = menue; self.text = text; self.bestellt = bestellt }
+    /// Zusatzstoffe/Allergene („1,3,A“) – auch beim Meiden durchsucht
+    public var zusatz: String
+    public init(menue: String, text: String, bestellt: Bool = false, zusatz: String = "") { self.menue = menue; self.text = text; self.bestellt = bestellt; self.zusatz = zusatz }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        menue = try c.decode(String.self, forKey: .menue); text = try c.decode(String.self, forKey: .text)
+        bestellt = (try? c.decode(Bool.self, forKey: .bestellt)) ?? false; zusatz = (try? c.decode(String.self, forKey: .zusatz)) ?? ""
+    }
+
+    /// Kommt eins der Stichwörter („Pizza, Nudeln“) vor? [mitZusatz]: auch in den Zusatzstoffen suchen (zum Meiden)
+    public func passt(_ stichwoerter: String, mitZusatz: Bool = false) -> Bool {
+        let woerter = stichwoerter.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+        let t = (text + (mitZusatz ? " " + zusatz : "")).lowercased()
+        return woerter.contains { t.contains($0) }
+    }
 }
 
 /// Ein Tag im Speiseplan
@@ -20,12 +34,49 @@ public struct MensaTag: Codable, Hashable, Sendable {
     public init(datum: String, gerichte: [Gericht] = [], frei: String? = nil) { self.datum = datum; self.gerichte = gerichte; self.frei = frei }
 
     /// Was es (für mich) gibt: das bestellte Gericht, sonst das erste
-    public var haupt: Gericht? { gerichte.first(where: \.bestellt) ?? gerichte.first }
+    public var haupt: Gericht? { haupt() }
+    /// Wie im Kantinen-Widget: bestellt → Lieblingsessen → erstes nicht gemiedenes → erstes
+    public func haupt(favoriten: String = "", meiden: String = "") -> Gericht? {
+        gerichte.first(where: \.bestellt) ?? gerichte.first { !favoriten.isEmpty && $0.passt(favoriten) }
+            ?? gerichte.first { meiden.isEmpty || !$0.passt(meiden, mitZusatz: true) } ?? gerichte.first
+    }
 
     public func satz(heute: Bool = true) -> String {
         if let f = frei { return "Die Mensa hat \(heute ? "heute" : "an dem Tag") geschlossen\(f.isEmpty ? "" : " (\(f))")." }
         guard let h = haupt else { return "" }
         return h.bestellt ? "In der Mensa gibt es für dich \(h.text)." : "In der Mensa gibt es \(h.text)."
+    }
+}
+
+/// Mehrere Wochen Speiseplan und das Guthaben
+public struct MensaPlan: Codable, Hashable, Sendable {
+    public var tage: [MensaTag]
+    public var guthaben: Double?
+    public var stand: Date
+    public init(tage: [MensaTag], guthaben: Double? = nil, stand: Date = Date()) { self.tage = tage; self.guthaben = guthaben; self.stand = stand }
+    public func tag(_ iso: String) -> MensaTag? { tage.first { $0.datum == iso } }
+}
+
+/// Für welchen Tag Schul-Infos gelten: bis 16 Uhr heute, danach der nächste Schultag (Wochenende und freie Tage übersprungen)
+public enum Tagwahl {
+    public static let umschaltStunde = 16
+    public static func ziel(_ jetzt: Date = Date(), frei: [FreierTag] = []) -> Date {
+        let k = Zeit.kalender
+        var d = k.startOfDay(for: jetzt)
+        if k.component(.hour, from: jetzt) >= umschaltStunde { d = k.date(byAdding: .day, value: 1, to: d) ?? d }
+        for _ in 0..<30 {
+            let wt = k.component(.weekday, from: d)
+            if wt != 1 && wt != 7 && FreieTage.am(frei, d) == nil { break }
+            d = k.date(byAdding: .day, value: 1, to: d) ?? d
+        }
+        return d
+    }
+    /// „heute“, „morgen“ oder „Montag“
+    public static func name(_ tag: Date, jetzt: Date = Date()) -> String {
+        let k = Zeit.kalender
+        if k.isDate(tag, inSameDayAs: jetzt) { return "heute" }
+        if let m = k.date(byAdding: .day, value: 1, to: jetzt), k.isDate(tag, inSameDayAs: m) { return "morgen" }
+        return Zeit.wochentag(tag)
     }
 }
 
@@ -55,8 +106,13 @@ public enum Mensa {
         return Zeit.iso(k.date(byAdding: .day, value: plus, to: d) ?? d)
     }
 
-    /// Tag [ziel] (ISO) aus dem Portal: aktuelle Woche, bei Bedarf eine Woche weiter
+    /// Tag [ziel] (ISO) aus dem Portal
     public static func laden(adresse: String, benutzer: String, passwort: String, ziel: String) async throws -> MensaTag? {
+        try await ladePlan(adresse: adresse, benutzer: benutzer, passwort: passwort).tage.first { $0.datum == ziel }
+    }
+
+    /// Diese und die nächste Woche samt Guthaben (wie die Übersicht im Kantinen-Widget)
+    public static func ladePlan(adresse: String, benutzer: String, passwort: String) async throws -> MensaPlan {
         let basis = adresse.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard basis.hasPrefix("https://"), URL(string: basis) != nil else { throw Fehler.adresse }
         // Eigene Sitzung: Cookies nur für diesen Abruf
@@ -99,13 +155,13 @@ public enum Mensa {
         ], referer: basis + pfadLogin)
         guard antwort.range(of: "<redirect", options: .caseInsensitive) != nil else { throw Fehler.anmeldung(String(text(antwort).prefix(80))) }
 
-        _ = try await hole(pfadDash, referer: basis + pfadLogin)
+        let (dash, _) = try await hole(pfadDash, referer: basis + pfadLogin)
+        let guthaben = guthabenAus(dash)
         var (plan, planUrl) = try await hole(pfadPlan, referer: basis + pfadDash)
         if plan.contains("id=\"loginForm\"") { throw Fehler.anmeldung("Sitzung abgelehnt") }
         var tage = tageAus(plan)
-        // Zieltag nach dieser Woche (Freitagnachmittag/Wochenende) → eine Woche weiter blättern
-        if !tage.contains(where: { $0.datum == ziel }), let letzter = tage.last?.datum, ziel > letzter,
-           let vs2 = erster(#"name="javax\.faces\.ViewState"[^>]*value="([^"]*)""#, plan) {
+        // Nächste Woche gleich mitholen (Freitagnachmittag, Wochenende, Wochenübersicht)
+        if let vs2 = erster(#"name="javax\.faces\.ViewState"[^>]*value="([^"]*)""#, plan) {
             var ziel2 = erster(#"<form[^>]*id="itemsForm"[^>]*action="([^"]+)""#, plan).map(entities) ?? ""
             if !ziel2.contains("execution=") { ziel2 = planUrl?.absoluteString ?? basis + pfadPlan }
             let xml = try await post(ziel2, [
@@ -114,9 +170,22 @@ public enum Mensa {
             ], referer: planUrl?.absoluteString ?? basis + pfadPlan)
             plan = alle(#"<!\[CDATA\[([\s\S]*?)\]\]>"#, xml).joined(separator: "\n")
             planUrl = nil
-            tage += tageAus(plan)
+            let weiter = tageAus(plan).filter { neu in !tage.contains { $0.datum == neu.datum } }
+            tage += weiter
         }
-        return tage.first { $0.datum == ziel }
+        return MensaPlan(tage: tage.sorted { $0.datum < $1.datum }, guthaben: guthaben, stand: Date())
+    }
+
+    /// „Verfügbar: 12,40 €“ aus dem Dashboard (sonst Gesamt)
+    public static func guthabenAus(_ html: String) -> Double? {
+        let ab = html.range(of: "balancePanel").map { String(html[$0.lowerBound...].prefix(6000)) } ?? html
+        let t = text(ab)
+        func greif(_ muster: String) -> Double? {
+            guard let r = t.range(of: muster, options: [.regularExpression, .caseInsensitive]) else { return nil }
+            let zahl = String(t[r]).replacingOccurrences(of: #"^.*?(-?[d.]+,d{2}).*$"#, with: "$1", options: .regularExpression)
+            return Double(zahl.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: "."))
+        }
+        return greif(#"Verf(ü|ue)gbar:?s*-?[d.]+,d{2}s*€"#) ?? greif(#"GUTHABENs*(GESAMT)s*-?[d.]+,d{2}s*€"#)
     }
 
     // MARK: Lesen (öffentlich für Tests)
@@ -143,10 +212,11 @@ public enum Mensa {
                 }
                 guard let roh = erster(#"innerFoodNameContainer[^>]*>([\s\S]*?)</div>"#, z) else { continue }
                 let gericht = text(roh.replacingOccurrences(of: #"<span class="additive-info">[\s\S]*?</span>"#, with: "", options: .regularExpression))
+                let zusatz = text(erster(#"<span class="additive-info">([\s\S]*?)</span>"#, roh) ?? "")
                 guard !gericht.isEmpty else { continue }
                 let bestellt = klassen.range(of: #"\b(selected|ordered|reserved|reservation|booked|ui-state-active|is-ordered)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
                     || z.range(of: #"aria-checked="true"|checked="checked"|\bfa-check\b"#, options: .regularExpression) != nil
-                tag.gerichte.append(Gericht(menue: i < namen.count ? namen[i] : "Menü \(i + 1)", text: gericht, bestellt: bestellt))
+                tag.gerichte.append(Gericht(menue: i < namen.count ? namen[i] : "Menü \(i + 1)", text: gericht, bestellt: bestellt, zusatz: zusatz))
             }
             if tag.frei != nil && !tag.gerichte.isEmpty { tag.frei = nil }
             tage.append(tag)
