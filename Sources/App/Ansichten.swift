@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import MorgenKern
 
 struct HauptAnsicht: View {
@@ -29,6 +30,7 @@ struct HauptAnsicht: View {
                 }
             }
             .sheet(isPresented: $kern.einstellungenOffen) { NavigationStack { EinstellungenAnsicht(kern: kern) } }
+            .fullScreenCover(isPresented: $kern.nachtOffen) { NachtAnsicht(kern: kern, musik: kern.musik) }
             .overlay(alignment: .bottom) {
                 if !kern.meldung.isEmpty {
                     Text(kern.meldung).font(.callout.weight(.medium)).padding(.horizontal, 16).padding(.vertical, 10)
@@ -59,9 +61,16 @@ struct HauptAnsicht: View {
     }
 
     private var knoepfe: some View {
-        HStack(spacing: 12) {
-            Button { Task { await kern.briefingVorlesen() } } label: { GrosserKnopf(symbol: "sun.max.fill", titel: "Vorlesen", farbe: .orange) }
-            Button { Task { await kern.guteNacht() } } label: { GrosserKnopf(symbol: "moon.stars.fill", titel: "Gute Nacht", farbe: .indigo) }
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Button { Task { await kern.briefingVorlesen() } } label: { GrosserKnopf(symbol: "sun.max.fill", titel: "Vorlesen", farbe: .orange) }
+                Button { Task { await kern.guteNacht() } } label: { GrosserKnopf(symbol: "moon.stars.fill", titel: "Gute Nacht", farbe: .indigo) }
+            }
+            Button { Task { await kern.nachtVorbereiten(); kern.nachtOffen = true } } label: {
+                Label(kern.musik.quelle == .aus ? "Nachtmodus" : "Nachtmodus · \(kern.musik.titel)", systemImage: "bed.double.fill")
+                    .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Color(red: 0.15, green: 0.15, blue: 0.3).gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
         }
         .buttonStyle(.plain)
         .padding(.top, 6)
@@ -234,6 +243,8 @@ struct EinstellungenAnsicht: View {
                 TextField("Kürzel, z. B. Sta", text: $k.einstellungen.kuerzel).textInputAutocapitalization(.never)
             } header: { Text("Schule") } footer: { Text("Cloud-Ordner mit dem Vertretungsplan (Word-Dateien). Gelesen wird nur, was für dein Kürzel drinsteht.") }
 
+            WeckmusikAbschnitt(musik: kern.musik)
+
             Section("Kalender") {
                 Toggle("Termine", isOn: $k.einstellungen.termine)
                 Toggle("Erinnerungen", isOn: $k.einstellungen.erinnerungen)
@@ -251,5 +262,32 @@ struct EinstellungenAnsicht: View {
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { schliessen(); Task { await kern.aktualisieren() } } } }
+    }
+}
+
+struct WeckmusikAbschnitt: View {
+    @Bindable var musik: Weckmusik
+    @State private var mediathek = false
+    @State private var datei = false
+
+    var body: some View {
+        Section {
+            Picker("Weckmusik", selection: $musik.quelle) {
+                Text("Weckton").tag(Weckmusik.Quelle.aus)
+                Text("Apple Music").tag(Weckmusik.Quelle.apple)
+                Text("Eigene Datei").tag(Weckmusik.Quelle.datei)
+            }
+            if musik.quelle != .aus && !musik.titel.isEmpty { LabeledContent("Titel", value: musik.titel) }
+            Button("Titel aus der Mediathek wählen …") { mediathek = true }
+            Button("Musikdatei wählen …") { datei = true }
+            Stepper("Einblenden: \(musik.einblendenSek) s", value: $musik.einblendenSek, in: 10...300, step: 10)
+            HStack { Image(systemName: "speaker.fill"); Slider(value: $musik.zielLautstaerke, in: 0.2...1); Image(systemName: "speaker.wave.3.fill") }
+        } header: { Text("Weckmusik (Nachtmodus)") } footer: {
+            Text("Im Nachtmodus bleibt die App auf dem Nachttisch offen (am besten am Ladekabel) und spielt zur Weckzeit die Musik – leise beginnend. Der normale Wecker klingelt zur Sicherheit 5 Minuten später. Spotify lässt sich von anderen Apps nicht starten: dafür in der Kurzbefehle-App eine Automation „Wecker → Wenn er klingelt“ mit „Spotify: Abspielen“ anlegen.")
+        }
+        .sheet(isPresented: $mediathek) { MediathekWahl { musik.appleGewaehlt($0) }.ignoresSafeArea() }
+        .fileImporter(isPresented: $datei, allowedContentTypes: [.audio]) { erg in
+            if case .success(let url) = erg { _ = musik.dateiGewaehlt(url) }
+        }
     }
 }

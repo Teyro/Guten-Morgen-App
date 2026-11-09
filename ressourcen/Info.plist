@@ -17,6 +17,8 @@
 	<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 	<key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationPortraitUpsideDown</string></array>
 	<key>NSSupportsLiveActivities</key><true/>
+	<key>UIBackgroundModes</key><array><string>audio</string></array>
+	<key>NSAppleMusicUsageDescription</key><string>Damit ein Titel aus deiner Mediathek als Weckmusik spielen kann.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key><string>Für die Weckzeit (früher wecken vor dem ersten Termin) und das Morgen-Briefing.</string>
 	<key>NSRemindersFullAccessUsageDescription</key><string>Fällige Erinnerungen werden im Morgen-Briefing vorgelesen.</string>
 	<key>NSAlarmKitUsageDescription</key><string>Guten Morgen stellt den Wecker für dich – passend zu Terminen, Ferien und Feiertagen.</string>

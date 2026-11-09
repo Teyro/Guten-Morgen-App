@@ -27,6 +27,8 @@ final class Kern {
     var einstellungenOffen = false
 
     @ObservationIgnored let kalender = Kalender()
+    let musik = Weckmusik()
+    var nachtOffen = false
 
     init() {
         if vorschau {
@@ -116,6 +118,17 @@ final class Kern {
         let t = Briefing.nacht(d)
         if vorlesen { Sprecher.shared.sprechen(t) }
         return t
+    }
+
+    /// Nachtmodus: der normale Wecker rückt als Sicherheit 5 Minuten nach hinten (zuerst spielt die Weckmusik)
+    func nachtVorbereiten() async {
+        guard Wecker.verfuegbar, let d = naechsterWecker.datum else { return }
+        weckerText = await Wecker.stellen(d.addingTimeInterval(300))
+    }
+
+    /// Nach dem Aufstehen (oder Abbruch): den Wecker für den nächsten Tag stellen
+    func nachtVorbei() async {
+        if Wecker.verfuegbar && einstellungen.weckerAutomatisch { await weckerStellen(still: true) }
     }
 
     func weckerStellen(still: Bool = false) async {

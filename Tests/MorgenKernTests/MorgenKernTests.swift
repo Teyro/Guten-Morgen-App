@@ -77,6 +77,17 @@ final class MorgenKernTests: XCTestCase {
         XCTAssertNotNil(Vertretung.zerlege("https://cloud.example.de/s/AbC123"))
     }
 
+    func testPlanWahl() {
+        // 9.11.2026 früh: alle Dateien neu gespeichert, die mit Datum im Namen muss gewinnen
+        let z = tag(2026, 11, 9, 7, 37)
+        let dateien: [(name: String, zeit: Date)] = [("5. Freitag.docx", z), ("4. Donnerstag.docx", z.addingTimeInterval(-30)), ("3. Mittwoch.docx", z.addingTimeInterval(-60)),
+                                                     ("2. Dienstag.docx", z.addingTimeInterval(-90)), ("1. Montag 0911.docx", z.addingTimeInterval(-120)), ("1. Montag.docx", z.addingTimeInterval(-900))]
+        XCTAssertEqual(Vertretung.reihenfolge(dateien, ziel: "2026-11-09").first?.name, "1. Montag 0911.docx")
+        XCTAssertEqual(Vertretung.reihenfolge(dateien, ziel: "2026-11-09").dropFirst().first?.name, "1. Montag.docx")
+        XCTAssertEqual(Vertretung.reihenfolge(dateien, ziel: "2026-11-10").first?.name, "2. Dienstag.docx")
+        XCTAssertEqual(Vertretung.reihenfolge(dateien, ziel: Vertretung.zielTag(tag(2026, 11, 8))).first?.name, "5. Freitag.docx")
+    }
+
     func testBriefing() {
         var d = BriefingDaten()
         d.jetzt = tag(2026, 11, 9, 6, 15)

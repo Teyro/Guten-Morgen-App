@@ -15,6 +15,8 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var hinweise: [String] = []
     public var fehlen: [String] = []
     public var datei = ""
+    /// Wie viele Zellen im Stundenteil ausgefüllt sind (leere Vorlage = 0)
+    public var belegt = 0
     public init() {}
 
     /// „2. Stunde 2c, 2. Pause Aufsicht Mensa.“ – leer, wenn nichts für das Kürzel drinsteht
@@ -40,8 +42,9 @@ public enum Vertretung {
         return (host, token)
     }
 
-    /// Neuester passender Plan für [kuerzel]: die drei zuletzt bearbeiteten Dateien, Datum oben im Dokument am nächsten am Tag
-    /// (Wochenende: Freitag); bei Gleichstand gewinnt die, deren Dateiname dasselbe Datum trägt.
+    /// Der Plan für heute (Wochenende: Freitag): Datum im Dateinamen zählt am meisten, dann ein bloßer Wochentag
+    /// (als dieser Tag der aktuellen Woche), das Datum im Dokument nur als Notlösung (Word-Feld = Speichertag).
+    /// Bei Gleichstand gewinnt der Plan mit mehr Einträgen, dann die zuletzt gespeicherte Datei.
     public static func laden(link: String, kuerzel: String, jetzt: Date = Date()) async throws -> VertretungsPlan {
         guard let teile = zerlege(link) else { throw URLError(.badURL) }
         let host = teile.host, token = teile.token
@@ -54,23 +57,53 @@ public enum Vertretung {
             (d, s) = try await Netz.daten(URL(string: basis)!, methode: "PROPFIND", kopf: ["Authorization": auth, "Depth": "1"], koerper: propfind)
         }
         guard s == 207 else { throw URLError(.cannotConnectToHost) }
-        let dateien = wordDateien(String(decoding: d, as: UTF8.self)).prefix(3)
         let ziel = zielTag(jetzt)
-        var beste: (plan: VertretungsPlan, wert: (Int, Int, Double))?
-        for f in dateien {
-            guard let pfad = f.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+        let reihe = reihenfolge(wordDateien(String(decoding: d, as: UTF8.self)), ziel: ziel)
+        var beste: (plan: VertretungsPlan, wert: (Int, Double, Int, Double))?
+        for k in reihe.prefix(4) {
+            if let b = beste, k.rang > b.wert.0 { break }
+            guard let pfad = k.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
                   let url = URL(string: basis + pfad),
                   let antwort = try? await Netz.daten(url, kopf: ["Authorization": auth], zeit: 30), antwort.1 == 200,
                   let xml = dokument(antwort.0) else { continue }
             var p = auswerten(xml, kuerzel: kuerzel)
-            p.datei = f.name
-            let ausName = nameDatum(f.name, f.zeit)
-            let doku = p.datum ?? ausName ?? Zeit.iso(f.zeit)
-            let wert = (abstand(doku, ziel), ausName == ziel ? 0 : 1, -f.zeit.timeIntervalSince1970)
-            if beste == nil || wert < beste!.wert { beste = (p, wert); if let a = ausName { beste!.plan.datum = a } }
+            p.datei = k.name
+            if let t = k.tag { p.datum = t }
+            let wert = (k.rang, k.abstand, -p.belegt, -k.zeit.timeIntervalSince1970)
+            if beste == nil || wert < beste!.wert { beste = (p, wert) }
         }
         guard let b = beste else { throw URLError(.cannotParseResponse) }
         return b.plan
+    }
+
+    public struct Kandidat: Sendable { public var name: String; public var zeit: Date; public var rang: Int; public var abstand: Double; public var tag: String? }
+
+    /// Wochentag im Dateinamen (1 = Montag … 5 = Freitag) oder 0
+    public static func nameWochentag(_ name: String) -> Int {
+        let n = name.lowercased()
+        return (["montag", "dienstag", "mittwoch", "donnerstag", "freitag"].firstIndex { n.contains($0) } ?? -1) + 1
+    }
+
+    /// Derselbe Wochentag in der Woche von [ziel]
+    static func tagDerWoche(_ ziel: String, _ wt: Int) -> String? {
+        guard let d = Zeit.tag(ziel) else { return nil }
+        let k = Zeit.kalender
+        let wochentag = (k.component(.weekday, from: d) + 5) % 7 // Montag = 0
+        return k.date(byAdding: .day, value: wt - 1 - wochentag, to: d).map(Zeit.iso)
+    }
+
+    /// rang 0: Datum im Namen = Ziel, 1: Wochentag im Namen = Ziel, 2: Rest nach Abstand; innerhalb zuerst die neueste
+    public static func reihenfolge(_ dateien: [(name: String, zeit: Date)], ziel: String) -> [Kandidat] {
+        dateien.map { f -> Kandidat in
+            let ausName = nameDatum(f.name, f.zeit)
+            let wt = nameWochentag(f.name)
+            let woche = wt > 0 ? tagDerWoche(ziel, wt) : nil
+            if ausName == ziel { return Kandidat(name: f.name, zeit: f.zeit, rang: 0, abstand: 0, tag: ausName) }
+            if ausName == nil, woche == ziel { return Kandidat(name: f.name, zeit: f.zeit, rang: 1, abstand: 0, tag: woche) }
+            let tag = ausName ?? woche
+            let a = tag.map { Double(abstand($0, ziel)) + ($0 > ziel ? 0.5 : 0) } ?? 99
+            return Kandidat(name: f.name, zeit: f.zeit, rang: 2, abstand: a, tag: tag)
+        }.sorted { ($0.rang, $0.abstand, -$0.zeit.timeIntervalSince1970) < ($1.rang, $1.abstand, -$1.zeit.timeIntervalSince1970) }
     }
 
     public static func zielTag(_ jetzt: Date) -> String {
@@ -233,7 +266,9 @@ public enum Vertretung {
                 }
                 continue
             }
-            guard i > kopfI, !titel.isEmpty, !t.hasPrefix("wichtig"), !k.isEmpty else { continue }
+            guard i > kopfI, !titel.isEmpty, !t.hasPrefix("wichtig") else { continue }
+            p.belegt += z.dropFirst().filter { !$0.text.isEmpty }.count
+            guard !k.isEmpty else { continue }
             for c in z.dropFirst() where !c.text.isEmpty && hat(c.text, k) {
                 let ueber = kopf.filter { $0.von < c.bis && $0.bis > c.von }
                 let klasse = ueber.count > 1 ? "\(ueber.first!.text)–\(ueber.last!.text)" : (kopf.first { c.mitte >= Double($0.von) && c.mitte < Double($0.bis) }?.text ?? "")

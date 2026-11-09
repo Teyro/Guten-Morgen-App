@@ -23,6 +23,8 @@ struct MorgenEintrag: TimelineEntry {
     var wetter: Wetter?
     var termin: Termin?
     var post = ""
+    var heute: [Termin] = []
+    var vertretung: VertretungsPlan?
 }
 
 /// Ohne Einstellungen pro Widget (StaticConfiguration) – die starten auch in neu signierten Apps.
@@ -68,7 +70,18 @@ struct MorgenZeitleiste: TimelineProvider {
         async let w = try? Wetter.laden(lat: e.lat, lon: e.lon)
         async let p: String = e.post && ha.eingerichtet ? ha.postHeute() : ""
         let naechster = termine.filter { !$0.ganztags && $0.start > Date() }.min { $0.start < $1.start }
-        return MorgenEintrag(date: Date(), eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p)
+        let heute = termine.filter { Zeit.kalender.isDateInToday($0.start) }.sorted { $0.start < $1.start }
+        // Vertretung (fürs große Widget) höchstens alle 30 Minuten aus dem Schul-Ordner
+        var plan = d.data(forKey: "vertretung").flatMap { try? JSONDecoder().decode(VertretungsPlan.self, from: $0) }
+        if e.vertretung, !e.vertretungLink.isEmpty, !e.kuerzel.isEmpty, Date().timeIntervalSince1970 - d.double(forKey: "vertretungStand") > 1800 {
+            if let neu = try? await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel) {
+                plan = neu
+                d.set(try? JSONEncoder().encode(neu), forKey: "vertretung")
+            }
+            d.set(Date().timeIntervalSince1970, forKey: "vertretungStand")
+        }
+        return MorgenEintrag(date: Date(), eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p,
+                             heute: heute, vertretung: e.vertretung ? plan : nil)
     }
 }
 
@@ -80,9 +93,9 @@ struct MorgenWidget: Widget {
             }
         }
         .configurationDisplayName("Guten Morgen")
-        .description("Wecker, Wetter, nächster Termin und Post.")
+        .description("Wecker, Wetter, Termine, Vertretung und Post.")
         #if os(iOS)
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline, .accessoryCircular])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline, .accessoryCircular])
         #endif
     }
 }
@@ -117,6 +130,7 @@ struct MorgenWidgetAnsicht: View {
                 }
             #endif
             case .systemMedium: mittel
+            case .systemLarge, .systemExtraLarge: gross
             default: klein
             }
         }
@@ -134,6 +148,49 @@ struct MorgenWidgetAnsicht: View {
                     Text("\(Int(t.min.rounded()))–\(Int(t.max.rounded()))°").font(.caption).opacity(0.85)
                 }
             }
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var gross: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) { Image(systemName: "alarm.fill"); Text("Wecker \(weckTag)") }.font(.caption.weight(.semibold)).opacity(0.85)
+                    Text(weckText).font(.system(size: 44, weight: .bold, design: .rounded))
+                    if let g = e.wecker?.grund, !g.isEmpty { Text(g).font(.caption).lineLimit(2).opacity(0.9) }
+                }
+                Spacer()
+                if let w = e.wetter, let t = w.heute {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Image(systemName: Wetter.symbol(w.jetztCode ?? t.code)).symbolRenderingMode(.multicolor).font(.system(size: 30))
+                        Text("\(Int((w.jetzt ?? t.max).rounded()))°").font(.title2.weight(.bold))
+                        Text("\(Int(t.min.rounded()))–\(Int(t.max.rounded()))° · ☂︎ \(t.regen) %").font(.caption2).opacity(0.85)
+                    }
+                }
+            }
+            Divider().overlay(.white.opacity(0.3))
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Heute", systemImage: "calendar").font(.caption.weight(.semibold)).opacity(0.85)
+                if e.heute.isEmpty { Text("Keine Termine").font(.callout).opacity(0.8) }
+                ForEach(Array(e.heute.prefix(4).enumerated()), id: \.offset) { _, t in
+                    HStack(spacing: 8) {
+                        Text(t.ganztags ? "ganzt." : t.start.uhrzeit).font(.caption.monospacedDigit()).opacity(0.85).frame(width: 44, alignment: .leading)
+                        Text(t.titel).font(.callout.weight(.medium)).lineLimit(1)
+                    }
+                }
+            }
+            if let v = e.vertretung {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Vertretung", systemImage: "person.2.fill").font(.caption.weight(.semibold)).opacity(0.85)
+                    if v.stunden.isEmpty && v.pausen.isEmpty { Text("Keine Vertretung").font(.callout).opacity(0.8) }
+                    if !v.stunden.isEmpty { Text(v.stunden.map { "\($0.stunde). \($0.klasse)" }.joined(separator: " · ")).font(.callout.weight(.semibold)).lineLimit(1) }
+                    ForEach(Array(v.pausen.prefix(2).enumerated()), id: \.offset) { _, p in Text("🚶 \(p.pause): \(p.ort)").font(.caption).lineLimit(1) }
+                }
+            }
+            if !e.post.isEmpty { Label(e.post, systemImage: "shippingbox.fill").font(.caption).lineLimit(2) }
+            Spacer(minLength: 0)
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, alignment: .leading)
