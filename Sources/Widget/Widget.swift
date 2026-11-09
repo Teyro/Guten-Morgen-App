@@ -29,6 +29,7 @@ struct MorgenEintrag: TimelineEntry {
     var haeuser: [String: [String]] = [:]
     var mensa: MensaTag?
     var mensaWahl: (String, String) = ("", "")
+    var gemerkt: ([String], [String]) = ([], [])
     var obst = false
     var farbton = "morgenrot"
     /// „heute“, „morgen“ oder „Montag“
@@ -52,7 +53,7 @@ struct MorgenEintrag: TimelineEntry {
     var essen: String? {
         guard let m = mensa else { return nil }
         if let f = m.frei { return "Mensa zu" + (f.isEmpty ? "" : " (\(f))") }
-        return m.haupt(favoriten: mensaWahl.0, meiden: mensaWahl.1).map { ($0.bestellt ? "✓ " : "") + $0.text }
+        return m.haupt(favoriten: mensaWahl.0, meiden: mensaWahl.1, gut: gemerkt.0, schlecht: gemerkt.1).map { ($0.bestellt ? "✓ " : "") + $0.text }
     }
 }
 
@@ -139,7 +140,7 @@ struct MorgenZeitleiste: TimelineProvider {
         }
         return MorgenEintrag(date: jetzt, eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p,
                              heute: tagesTermine, vertretung: e.vertretung ? plan : nil, haeuser: e.haeuser,
-                             mensa: e.mensa ? mensaPlan?.tag(ziel) : nil, mensaWahl: (e.favoriten, e.meiden),
+                             mensa: e.mensa ? mensaPlan?.tag(ziel) : nil, mensaWahl: (e.favoriten, e.meiden), gemerkt: (e.lieblingsGerichte, e.nichtLecker),
                              obst: e.obstBereit && obstTage.contains(ziel), farbton: e.farbton, schulName: Tagwahl.name(schulTag, jetzt: jetzt))
     }
 }

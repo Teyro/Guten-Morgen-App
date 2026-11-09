@@ -17,6 +17,38 @@ public struct Gericht: Codable, Hashable, Sendable {
         bestellt = (try? c.decode(Bool.self, forKey: .bestellt)) ?? false; zusatz = (try? c.decode(String.self, forKey: .zusatz)) ?? ""
     }
 
+    /// Schlüssel zum Merken (wie im Kantinen-Skript: klein, Leerzeichen zusammengefasst)
+    public var schluessel: String { Gericht.schluessel(text) }
+    public static func schluessel(_ t: String) -> String { t.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+
+    /// Emoji zum Gericht (Regeln aus dem Kantinen-Skript)
+    public var emoji: String {
+        let regeln: [(String, String)] = [
+            ("pizza", "🍕"), ("burger", "🍔"), ("suppe|eintopf|chili con|soljanka|brühe", "🍲"),
+            ("schnitzel|frikadelle|bulette|gulasch|braten|kotelett|geschnetzelt|cordon|steak|hackfleisch|rinder|schweine", "🥩"),
+            ("currywurst|bratwurst|würstchen|wuerstchen|hot ?dog|wurst", "🌭"),
+            ("fisch|lachs|seelachs|kabeljau|forelle|hering|thunfisch|scholle|backfisch|pangasius|alaska", "🐟"),
+            ("hähnchen|haehnchen|huhn|geflügel|gefluegel|chicken|pute|nugget|hühner", "🍗"),
+            ("spaghetti|nudel|pasta|lasagne|penne|tortellini|ravioli|maultasche|spätzle|makkaroni|fusilli|farfalle|gnocchi|tagliatelle|rigatoni|bolognese|carbonara", "🍝"),
+            ("pfannkuchen|eierkuchen|crêpe|crepe|waffel|kaiserschmarrn|milchreis|grießbrei|griessbrei|germknödel|dampfnudel|pancake|arme ritter", "🥞"),
+            ("taco|wrap|burrito|tortilla|quesadilla|fajita|döner|doener|gyros|kebab", "🌯"), ("rind|schwein|hack|fleisch", "🥩"),
+            ("curry|reis|risotto|paella|bami|nasi", "🍛"), ("auflauf|gratin|quiche|moussaka|überbacken|ueberbacken", "🥘"),
+            (#"omelett|rührei|ruehrei|spiegelei|eier\b|\bei\b"#, "🍳"), ("kartoffel|pommes|püree|pueree|kroketten|rösti|roesti|bratkartoffel|wedges", "🥔"),
+            ("salat|bowl|gemüse|gemuese|veggie|vegan|vegetarisch|falafel|tofu|linsen|kichererbsen|bulgur|couscous", "🥗"),
+            ("pudding|quark|joghurt|dessert|kuchen|obst|kompott|muffin", "🍮"),
+        ]
+        return regeln.first { text.range(of: $0.0, options: [.regularExpression, .caseInsensitive]) != nil }?.1 ?? "🍽️"
+    }
+    /// „🌱 veggie“, „🐟 Fisch“, „🐖 Schwein“
+    public var merkmale: [String] {
+        var m: [String] = []
+        if text.range(of: "vegan", options: .caseInsensitive) != nil { m.append("🌱 vegan") }
+        else if text.range(of: #"vegetarisch|veggie|\(v\)|\bvegetar"#, options: [.regularExpression, .caseInsensitive]) != nil { m.append("🌱 veggie") }
+        if text.range(of: "fisch|lachs|seelachs|kabeljau|forelle|scholle|backfisch", options: [.regularExpression, .caseInsensitive]) != nil { m.append("🐟 Fisch") }
+        if text.range(of: "schwein", options: .caseInsensitive) != nil { m.append("🐖 Schwein") }
+        return m
+    }
+
     /// Kommt eins der Stichwörter („Pizza, Nudeln“) vor? [mitZusatz]: auch in den Zusatzstoffen suchen (zum Meiden)
     public func passt(_ stichwoerter: String, mitZusatz: Bool = false) -> Bool {
         let woerter = stichwoerter.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
@@ -35,10 +67,11 @@ public struct MensaTag: Codable, Hashable, Sendable {
 
     /// Was es (für mich) gibt: das bestellte Gericht, sonst das erste
     public var haupt: Gericht? { haupt() }
-    /// Wie im Kantinen-Widget: bestellt → Lieblingsessen → erstes nicht gemiedenes → erstes
-    public func haupt(favoriten: String = "", meiden: String = "") -> Gericht? {
-        gerichte.first(where: \.bestellt) ?? gerichte.first { !favoriten.isEmpty && $0.passt(favoriten) }
-            ?? gerichte.first { meiden.isEmpty || !$0.passt(meiden, mitZusatz: true) } ?? gerichte.first
+    /// Wie im Kantinen-Widget: bestellt → Lieblingsessen (⭐ gemerkt oder Stichwort) → erstes nicht gemiedenes → erstes
+    public func haupt(favoriten: String = "", meiden: String = "", gut: [String] = [], schlecht: [String] = []) -> Gericht? {
+        let g = Set(gut.map(Gericht.schluessel)), s = Set(schlecht.map(Gericht.schluessel))
+        return gerichte.first(where: \.bestellt) ?? gerichte.first { g.contains($0.schluessel) } ?? gerichte.first { !favoriten.isEmpty && $0.passt(favoriten) }
+            ?? gerichte.first { (meiden.isEmpty || !$0.passt(meiden, mitZusatz: true)) && !s.contains($0.schluessel) } ?? gerichte.first
     }
 
     public func satz(heute: Bool = true) -> String {

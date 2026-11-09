@@ -139,6 +139,7 @@ final class Kern {
         d.haeuser = einstellungen.haeuser; d.mensa = einstellungen.mensa ? mensa : nil; d.obst = einstellungen.obst && obstHeute
         d.schulTag = schulTag; d.schlaf = schlaf
         d.mensaWahl = (einstellungen.favoriten, einstellungen.meiden)
+        d.gemerkt = (einstellungen.lieblingsGerichte, einstellungen.nichtLecker)
         return Briefing.morgen(d)
     }
 

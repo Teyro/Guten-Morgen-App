@@ -46,6 +46,9 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     /// Kantine: Stichwörter für Lieblingsessen und zum Meiden (wie im Kantinen-Widget)
     public var favoriten = ""
     public var meiden = ""
+    /// Mit ⭐ / 👎 gemerkte Gerichte (genauer Text, wie im Kantinen-Skript)
+    public var lieblingsGerichte: [String] = []
+    public var nichtLecker: [String] = []
     /// Kollegium: Kürzel → Name (aus Mein Tag übernommen) – für „Es fehlen“
     public var kollegium: [String: String] = [:]
     /// Name des Scriptable-Skripts für Abwesenheiten, Störungen und Aufgaben
@@ -58,7 +61,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
-             favoriten, meiden, kollegium, meinTagSkript, gesundheit
+             favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -77,6 +80,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         farbton = w(.farbton, s.farbton)
         favoriten = w(.favoriten, s.favoriten); meiden = w(.meiden, s.meiden); kollegium = w(.kollegium, s.kollegium)
         meinTagSkript = w(.meinTagSkript, s.meinTagSkript); gesundheit = w(.gesundheit, s.gesundheit)
+        lieblingsGerichte = w(.lieblingsGerichte, s.lieblingsGerichte); nichtLecker = w(.nichtLecker, s.nichtLecker)
     }
 
     /// Ist der Speiseplan vollständig eingerichtet (Passwort extra)?
@@ -116,7 +120,7 @@ public struct Geheimnisse: Codable, Hashable, Sendable {
 
 /// Übernahme aus Scriptable („Mein Tag → An Guten Morgen übergeben“): gutenmorgen://import?d=<base64url-JSON>
 public struct ImportDaten: Codable, Sendable {
-    public struct Kantine: Codable, Sendable { public var adresse: String?; public var benutzer: String?; public var passwort: String?; public var favoriten: String?; public var meiden: String? }
+    public struct Kantine: Codable, Sendable { public var adresse: String?; public var benutzer: String?; public var passwort: String?; public var favoriten: String?; public var meiden: String?; public var gut: [String]?; public var schlecht: [String]? }
     public var kuerzel: String?
     public var link: String?
     public var passwort: String?
@@ -160,6 +164,8 @@ public struct ImportDaten: Codable, Sendable {
             if let b = m.benutzer, !b.isEmpty { e.mensaBenutzer = b; e.mensa = true }
             if let f = m.favoriten { e.favoriten = f }
             if let x = m.meiden { e.meiden = x }
+            if let g = m.gut, !g.isEmpty { e.lieblingsGerichte = g }
+            if let s = m.schlecht, !s.isEmpty { e.nichtLecker = s }
         }
         return (kantine?.passwort ?? "", passwort ?? "")
     }

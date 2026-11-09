@@ -16,6 +16,7 @@ public struct BriefingDaten: Sendable {
     public var schlaf: TimeInterval?
     /// Kantine: Lieblingsessen und Meiden (Stichwörter)
     public var mensaWahl: (favoriten: String, meiden: String) = ("", "")
+    public var gemerkt: (gut: [String], schlecht: [String]) = ([], [])
     public var frei: FreierTag?
     public var wecker: Weckzeit?
     public var offeneFenster: [String] = []
@@ -67,7 +68,7 @@ public enum Briefing {
         if schultag && d.obst { schule.append(schuleHeute ? "Heute kommt Schulobst." : "Es kommt Schulobst.") }
         if let m = d.mensa, schultag, m.datum == Zeit.iso(tag) {
             var mm = m
-            if let h = m.haupt(favoriten: d.mensaWahl.favoriten, meiden: d.mensaWahl.meiden) { mm.gerichte = [h] }
+            if let h = m.haupt(favoriten: d.mensaWahl.favoriten, meiden: d.mensaWahl.meiden, gut: d.gemerkt.gut, schlecht: d.gemerkt.schlecht) { mm.gerichte = [h] }
             schule.append(mm.satz(heute: schuleHeute))
         }
         if !schule.isEmpty { s.append((wann.isEmpty ? "" : wann + ": ") + schule.joined(separator: " ")) }

@@ -133,8 +133,7 @@ struct Karte<Inhalt: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
+        .glas(22)
     }
 }
 
@@ -267,7 +266,7 @@ struct SchuleKarte: View {
         if let m = kern.mensa {
             if let f = m.frei {
                 Zeile(marke: "🍽", farbe: .gray, titel: "Mensa geschlossen", unter: f.isEmpty ? nil : f)
-            } else if let h = m.haupt(favoriten: e.favoriten, meiden: e.meiden) {
+            } else if let h = m.haupt(favoriten: e.favoriten, meiden: e.meiden, gut: e.lieblingsGerichte, schlecht: e.nichtLecker) {
                 Zeile(marke: "🍽", farbe: .teal, titel: h.text, unter: (h.bestellt ? "Bestellt · " : "") + h.menue + " · Speiseplan ›")
             }
         } else if !kern.mensaFehler.isEmpty {
