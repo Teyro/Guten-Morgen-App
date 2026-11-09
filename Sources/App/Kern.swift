@@ -69,6 +69,9 @@ final class Kern {
     var einstellungenOffen = false
 
     @ObservationIgnored let kalender = Kalender()
+    @ObservationIgnored let ortung = Ortung()
+    /// Wo bin ich: Schule zuerst oder Termine und Post zuerst
+    var kontext: Kontext = .schule
     let musik = Weckmusik()
     var nachtOffen = false
 
@@ -157,6 +160,8 @@ final class Kern {
         }
         if let tage = await o { obstTage = tage } else if !e.obstBereit { obstTage = [] }
         schlaf = await s
+        if e.schulOrt != nil || e.zuhauseOrt != nil { _ = await ortung.einmal() }
+        kontext = Kontext.bestimme(frei: frei, hier: ortung.ort, schule: e.schulOrt, zuhause: e.zuhauseOrt)
         await moduleLaden()
         if e.weckerAutomatisch && Wecker.verfuegbar { await weckerStellen(still: true) }
         await widgetUebergeben()
@@ -326,6 +331,15 @@ final class Kern {
             if edupoolCode != nil { meldung = "Der Code ist abgelaufen – bitte noch einmal verbinden." }
         } catch { meldung = error.localizedDescription }
         edupoolCode = nil
+    }
+
+    /// Aktuellen Standort als Schule bzw. Zuhause merken
+    func ortMerken(schule: Bool) async {
+        guard let l = await ortung.einmal() else { meldung = "Standort nicht verfügbar – Ortungsdienste für Guten Morgen erlauben."; return }
+        let o = Kontext.Ort(lat: l.coordinate.latitude, lon: l.coordinate.longitude)
+        if schule { einstellungen.schulOrt = o } else { einstellungen.zuhauseOrt = o }
+        meldung = schule ? "Schule gespeichert" : "Zuhause gespeichert"
+        kontext = Kontext.bestimme(frei: frei, hier: o, schule: einstellungen.schulOrt, zuhause: einstellungen.zuhauseOrt)
     }
 
     /// Abwesenheiten, Störungen, Aufgaben: das Modul in Mein Tag (Scriptable) öffnen

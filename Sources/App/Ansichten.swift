@@ -14,10 +14,16 @@ struct HauptAnsicht: View {
                 VStack(spacing: 14) {
                     kopf
                     WeckerKarte(kern: kern)
-                    if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
-                    if let w = kern.wetter { WetterKarte(wetter: w) }
-                    if kern.einstellungen.termine { TermineKarte(termine: kern.termine.filter { Zeit.kalender.isDateInToday($0.start) }, erinnerungen: kern.erinnerungen) }
-                    if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
+                    // In der Schule: Schule zuerst; zu Hause und am Wochenende: Termine und Post zuerst
+                    if kern.kontext == .schule {
+                        if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
+                        if let w = kern.wetter { WetterKarte(wetter: w) }
+                        termineUndPost
+                    } else {
+                        termineUndPost
+                        if let w = kern.wetter { WetterKarte(wetter: w) }
+                        if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
+                    }
                     knoepfe
                 }
                 .padding()
@@ -74,6 +80,17 @@ struct HauptAnsicht: View {
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
     }
 
+    @ViewBuilder private var termineUndPost: some View {
+        if kern.einstellungen.termine {
+            // zu Hause und am Wochenende auch die nächsten Tage
+            let k = Zeit.kalender
+            let bis = k.date(byAdding: .day, value: kern.kontext == .schule ? 1 : 3, to: k.startOfDay(for: Date())) ?? Date()
+            TermineKarte(termine: kern.termine.filter { $0.start < bis && ($0.ganztags || $0.start > Date().addingTimeInterval(-1800)) },
+                         erinnerungen: kern.erinnerungen, mehrereTage: kern.kontext != .schule)
+        }
+        if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
+    }
+
     /// Schul-Karte nur, wenn etwas davon eingerichtet ist
     private var zeigeSchule: Bool {
         let e = kern.einstellungen
@@ -112,9 +129,9 @@ struct HauptAnsicht: View {
                 Button { Task { await kern.guteNacht() } } label: { GrosserKnopf(symbol: "moon.stars.fill", titel: "Gute Nacht", farbe: .indigo) }
             }
             Button { Task { await kern.nachtVorbereiten(); kern.nachtOffen = true } } label: {
-                Label(kern.musik.quelle == .aus ? "Nachtmodus" : "Nachtmodus · \(kern.musik.titel)", systemImage: "bed.double.fill")
+                Label(kern.musik.quelle == .aus ? "Nachtmodus" : "Nachtmodus · \(kern.musik.anzeige)", systemImage: "bed.double.fill")
                     .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color(red: 0.15, green: 0.15, blue: 0.3).gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .glasKnopf(Color(red: 0.2, green: 0.2, blue: 0.42), 16)
             }
         }
         .buttonStyle(.plain)
@@ -161,7 +178,7 @@ struct GrosserKnopf: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, minHeight: 86)
-        .background(farbe.gradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .glasKnopf(farbe)
     }
 }
 
@@ -207,13 +224,16 @@ struct WetterKarte: View {
 struct TermineKarte: View {
     let termine: [Termin]
     let erinnerungen: [String]
+    var mehrereTage = false
     var body: some View {
-        Karte(symbol: "calendar", farbe: .red, titel: "Heute") {
+        Karte(symbol: "calendar", farbe: .red, titel: mehrereTage ? "Termine" : "Heute") {
             if termine.isEmpty && erinnerungen.isEmpty { Text("Keine Termine.").foregroundStyle(.secondary) }
             ForEach(termine.sorted { $0.start < $1.start }, id: \.self) { t in
                 HStack {
                     Text(t.ganztags ? "ganztägig" : t.start.uhrzeit).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
                     Text(t.titel)
+                    Spacer(minLength: 0)
+                    if mehrereTage && !Zeit.kalender.isDateInToday(t.start) { Text(Tagwahl.name(t.start)).font(.caption).foregroundStyle(.secondary) }
                 }
             }
             ForEach(erinnerungen, id: \.self) { e in Label(e, systemImage: "checklist").font(.callout) }
@@ -426,6 +446,21 @@ struct EinstellungenAnsicht: View {
             WeckmusikAbschnitt(musik: kern.musik)
 
             Section {
+                Toggle("Mitteilungen bei neuen Störungen und Aufgaben", isOn: $k.einstellungen.mitteilungen)
+                    .onChange(of: kern.einstellungen.mitteilungen) { _, an in if an { Task { _ = await Melder.erlauben(); await kern.widgetUebergeben(erzwingen: true) } } }
+            } header: { Text("Mitteilungen") } footer: { Text("Geprüft wird, wenn sich das Widget aktualisiert (mehrmals am Tag, morgens alle 10 Minuten) – dafür muss das Widget auf dem Home-Bildschirm liegen.") }
+
+            Section {
+                LabeledContent("Schule", value: kern.einstellungen.schulOrt == nil ? "nicht gesetzt" : "gespeichert")
+                Button("Aktueller Standort ist die Schule") { Task { await kern.ortMerken(schule: true) } }
+                LabeledContent("Zuhause", value: kern.einstellungen.zuhauseOrt == nil ? "nicht gesetzt" : "gespeichert")
+                Button("Aktueller Standort ist Zuhause") { Task { await kern.ortMerken(schule: false) } }
+                if kern.einstellungen.schulOrt != nil || kern.einstellungen.zuhauseOrt != nil {
+                    Button("Orte vergessen", role: .destructive) { k.einstellungen.schulOrt = nil; k.einstellungen.zuhauseOrt = nil }
+                }
+            } header: { Text("Orte") } footer: { Text("In der Schule stehen Vertretung, Aufsicht und Mensa oben, zu Hause und am Wochenende Termine und Post & Pakete. Ohne Orte entscheidet die Uhrzeit. Fürs Widget: Ortungsdienste → Guten Morgen → „Beim Verwenden der App oder von Widgets“.") }
+
+            Section {
                 Toggle("Schlaf aus Apple Health", isOn: $k.einstellungen.gesundheit)
                     .onChange(of: kern.einstellungen.gesundheit) { _, an in if an { Task { _ = await Gesundheit.erlauben(); await kern.aktualisieren() } } }
             } header: { Text("Apple Health") } footer: { Text("Zeigt morgens, wie lange du geschlafen hast, und trägt den Nachtmodus als Schlaf („im Bett“) in Health ein.") }
@@ -479,6 +514,8 @@ struct EinstellungenAnsicht: View {
                 Link("Guten Morgen auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Hintergrund(farbton: kern.farbton))
         .onAppear { haeuserText = Vertretung.text(haeuser: kern.einstellungen.haeuser) }
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
@@ -497,16 +534,28 @@ struct WeckmusikAbschnitt: View {
                 Text("Weckton").tag(Weckmusik.Quelle.aus)
                 Text("Apple Music").tag(Weckmusik.Quelle.apple)
                 Text("Eigene Datei").tag(Weckmusik.Quelle.datei)
+                Text("Spotify").tag(Weckmusik.Quelle.spotify)
+                Text("Kurzbefehl").tag(Weckmusik.Quelle.kurzbefehl)
             }
-            if musik.quelle != .aus && !musik.titel.isEmpty { LabeledContent("Titel", value: musik.titel) }
-            Button("Titel aus der Mediathek wählen …") { mediathek = true }
-            Button("Musikdatei wählen …") { datei = true }
+            switch musik.quelle {
+            case .apple:
+                if !musik.titel.isEmpty { LabeledContent("Titel", value: musik.titel) }
+                Button("Titel aus der Mediathek wählen …") { mediathek = true }
+            case .datei:
+                if !musik.titel.isEmpty { LabeledContent("Datei", value: musik.titel) }
+                Button("Musikdatei wählen …") { datei = true }
+            case .spotify:
+                TextField("Spotify-Link (Playlist oder Titel)", text: $musik.link).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+            case .kurzbefehl:
+                TextField("Name des Kurzbefehls, z. B. Weckmusik", text: $musik.link).autocorrectionDisabled()
+            case .aus: EmptyView()
+            }
             Stepper("Einblenden: \(musik.einblendenSek) s", value: $musik.einblendenSek, in: 10...300, step: 10)
             HStack { Image(systemName: "speaker.fill"); Slider(value: $musik.zielLautstaerke, in: 0.2...1); Image(systemName: "speaker.wave.3.fill") }
         } header: { Text("Weckmusik (Nachtmodus)") } footer: {
-            Text("Im Nachtmodus bleibt die App auf dem Nachttisch offen (am besten am Ladekabel) und spielt zur Weckzeit die Musik – leise beginnend. Der normale Wecker klingelt zur Sicherheit 5 Minuten später. Spotify lässt sich von anderen Apps nicht starten: dafür in der Kurzbefehle-App eine Automation „Wecker → Wenn er klingelt“ mit „Spotify: Abspielen“ anlegen.")
+            Text("Im Nachtmodus bleibt die App auf dem Nachttisch offen (am besten am Ladekabel) und spielt zur Weckzeit die Musik – leise beginnend. Der normale Wecker klingelt zur Sicherheit 5 Minuten später.\n\nSpotify: In Spotify bei einer Playlist „Teilen → Link kopieren“ und hier einfügen – zur Weckzeit öffnet sich Spotify damit und die Lautstärke wird langsam lauter (falls Spotify nicht von selbst losspielt: einmal auf Play). Zuverlässiger: einen Kurzbefehl mit „Spotify: Wiedergabe“ bzw. „Medien wiedergeben“ anlegen und hier unter „Kurzbefehl“ seinen Namen eintragen.")
         }
-        .sheet(isPresented: $mediathek) { MediathekWahl { musik.appleGewaehlt($0) }.ignoresSafeArea() }
+        .sheet(isPresented: $mediathek) { MediathekWahl { musik.appleGewaehlt($0) } }
         .fileImporter(isPresented: $datei, allowedContentTypes: [.audio]) { erg in
             if case .success(let url) = erg { _ = musik.dateiGewaehlt(url) }
         }

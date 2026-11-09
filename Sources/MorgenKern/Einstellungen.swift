@@ -66,6 +66,11 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     /// Edupool-Aufgaben (Token im Schlüsselbund)
     public var aufgaben = false
     public var aufgabenFarbe = "#76a5af"
+    /// Mitteilungen bei neuen Störungsmeldungen und neuen/verschobenen Aufgaben
+    public var mitteilungen = false
+    /// Orte für die Anordnung (Schule zuerst bzw. Termine und Post zuerst)
+    public var schulOrt: Kontext.Ort?
+    public var zuhauseOrt: Kontext.Ort?
     /// Kollegium: Kürzel → Name (aus Mein Tag übernommen) – für „Es fehlen“
     public var kollegium: [String: String] = [:]
     /// Name des Scriptable-Skripts für Abwesenheiten, Störungen und Aufgaben
@@ -79,7 +84,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
-             iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe
+             iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
+             mitteilungen, schulOrt, zuhauseOrt
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -105,6 +111,9 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         stoerungen = w(.stoerungen, s.stoerungen); erledigteZeigen = w(.erledigteZeigen, s.erledigteZeigen)
         stoerungQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .stoerungQuelle)) ?? nil
         aufgaben = w(.aufgaben, s.aufgaben); aufgabenFarbe = w(.aufgabenFarbe, s.aufgabenFarbe)
+        mitteilungen = w(.mitteilungen, s.mitteilungen)
+        schulOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .schulOrt)) ?? nil
+        zuhauseOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .zuhauseOrt)) ?? nil
     }
 
     /// Ist der Speiseplan vollständig eingerichtet (Passwort extra)?

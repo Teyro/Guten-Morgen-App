@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import EventKit
+import CoreLocation
 import MorgenKern
 #if os(iOS)
 import ActivityKit
@@ -38,6 +39,8 @@ struct MorgenEintrag: TimelineEntry {
     var kinder: [String]?
     var stoerungen: Int?
     var aufgaben: Int?
+    /// Schule zuerst oder (zu Hause, am Wochenende) Termine und Post zuerst
+    var kontext: Kontext = .schule
 
     /// Kurze Schul-Zeilen: „2. Vertretung 2c · Haus 2“, „1.P Aufsicht Hof“, „🍎 Schulobst“
     var schulZeilen: [(marke: String, text: String)] {
@@ -167,12 +170,19 @@ struct MorgenZeitleiste: TimelineProvider {
             d.set(jetzt.timeIntervalSince1970, forKey: "aufgabenStand")
             if let st = try? await Aufgaben.laden(token: geheim.edupool, farbe: e.aufgabenFarbe) { auf = st; d.set(try? JSONEncoder().encode(st), forKey: "aufgaben") }
         }
+        if e.mitteilungen { Melder.pruefen(stoerungen: e.stoerungen ? stoe : nil, aufgaben: e.aufgaben ? auf : nil) }
+        // Standort (falls erlaubt): in der Schule die Schul-Infos, zu Hause und am Wochenende Termine und Post zuerst
+        var hier: Kontext.Ort?
+        let ortung = CLLocationManager()
+        if ortung.isAuthorizedForWidgetUpdates, let l = ortung.location { hier = Kontext.Ort(lat: l.coordinate.latitude, lon: l.coordinate.longitude) }
+        let kontext = Kontext.bestimme(jetzt: jetzt, frei: frei, hier: hier, schule: e.schulOrt, zuhause: e.zuhauseOrt)
         let kinder = abw.map { Abwesenheiten.amTag($0.eintraege, ziel: schulTag, klassen: e.klassenListe).map { e.sichtschutz ? Abwesenheiten.kurzName($0.name) : $0.name } }
         return MorgenEintrag(date: jetzt, eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p,
                              heute: tagesTermine, vertretung: e.vertretung ? plan : nil, haeuser: e.haeuser,
                              mensa: e.mensa ? mensaPlan?.tag(ziel) : nil, mensaWahl: (e.favoriten, e.meiden), gemerkt: (e.lieblingsGerichte, e.nichtLecker),
                              obst: e.obstBereit && obstTage.contains(ziel), farbton: e.farbton, schulName: Tagwahl.name(schulTag, jetzt: jetzt),
-                             kinder: e.abwesenheiten ? kinder : nil, stoerungen: e.stoerungen ? stoe?.offen.count : nil, aufgaben: e.aufgaben ? auf?.offen.count : nil)
+                             kinder: e.abwesenheiten ? kinder : nil, stoerungen: e.stoerungen ? stoe?.offen.count : nil, aufgaben: e.aufgaben ? auf?.offen.count : nil,
+                             kontext: kontext)
     }
 }
 
@@ -305,11 +315,15 @@ struct MorgenWidgetAnsicht: View {
             }
             .frame(width: 112, alignment: .leading)
             VStack(spacing: 6) {
-                if !e.schulZeilen.isEmpty {
+                if e.kontext != .schule {
+                    if let t = e.termin { kasten("Termin", "calendar", ziel: "termine") { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption.weight(.semibold)).lineLimit(2) } }
+                    if !e.post.isEmpty { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(e.termin == nil ? 4 : 2) } }
+                }
+                if e.kontext == .schule || (e.termin == nil && e.post.isEmpty), !e.schulZeilen.isEmpty {
                     kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(e.essen == nil ? 4 : 2).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
                 }
-                if let m = e.essen { kasten("Mensa", "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(2) } }
-                if e.schulZeilen.isEmpty && e.essen == nil {
+                if e.kontext == .schule, let m = e.essen { kasten("Mensa", "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(2) } }
+                if e.kontext == .schule && e.schulZeilen.isEmpty && e.essen == nil {
                     if let t = e.termin { kasten("Termin", "calendar", ziel: "termine") { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption.weight(.semibold)).lineLimit(2) } }
                     if !e.post.isEmpty { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(3) } }
                 }
@@ -321,7 +335,44 @@ struct MorgenWidgetAnsicht: View {
 
     private var zahlenDa: Bool { e.kinder != nil || e.stoerungen != nil || e.aufgaben != nil }
 
-    private var gross: some View {
+    @ViewBuilder private var gross: some View {
+        if e.kontext == .schule { grossSchule } else { grossZuhause }
+    }
+
+    /// Zu Hause und am Wochenende: Termine und Post groß, Schule (für den nächsten Schultag) knapp
+    private var grossZuhause: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top) {
+                weckerBlock
+                Spacer()
+                if let w = e.wetter, let t = w.heute {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Image(systemName: Wetter.symbol(w.jetztCode ?? t.code)).symbolRenderingMode(.multicolor).font(.system(size: 28))
+                        Text("\(Int((w.jetzt ?? t.max).rounded()))°").font(.title3.weight(.bold))
+                    }
+                }
+            }
+            kasten(e.kontext == .frei ? "Termine" : "Termine " + e.schulName, "calendar", ziel: "termine") {
+                if e.heute.isEmpty { Text("Keine Termine").font(.caption).opacity(0.8) }
+                ForEach(Array(e.heute.prefix(4).enumerated()), id: \.offset) { _, t in
+                    HStack(spacing: 8) {
+                        Text(t.ganztags ? "ganzt." : t.start.uhrzeit).font(.caption.monospacedDigit()).opacity(0.85).frame(width: 42, alignment: .leading)
+                        Text(t.titel).font(.caption.weight(.semibold)).lineLimit(1)
+                    }
+                }
+            }
+            if !e.post.isEmpty { kasten("Post & Pakete", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(3) } }
+            if !e.schulZeilen.isEmpty {
+                kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(2).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
+            }
+            if e.kontext != .frei, let m = e.essen { kasten("Mensa " + e.schulName, "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(1) } }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var grossSchule: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top) {
                 weckerBlock

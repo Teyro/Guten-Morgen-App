@@ -87,3 +87,32 @@ public enum Takt {
         return (6 * 60 + 55)...(7 * 60 + 55) ~= m
     }
 }
+
+/// Wo bin ich gerade – danach ordnen App und Widget ihre Inhalte (Schule zuerst oder Termine und Post zuerst)
+public enum Kontext: String, Sendable {
+    case schule, zuhause, frei
+
+    public struct Ort: Codable, Hashable, Sendable {
+        public var lat: Double, lon: Double
+        public init(lat: Double, lon: Double) { self.lat = lat; self.lon = lon }
+        /// Entfernung in Metern (Haversine)
+        public func abstand(_ o: Ort) -> Double {
+            let r = 6_371_000.0, p = Double.pi / 180
+            let a = pow(sin((o.lat - lat) * p / 2), 2) + cos(lat * p) * cos(o.lat * p) * pow(sin((o.lon - lon) * p / 2), 2)
+            return 2 * r * asin(min(1, sqrt(a)))
+        }
+    }
+
+    /// Frei (Wochenende, Ferien, Feiertag) → frei; in der Nähe der Schule → schule; zu Hause → zuhause (bis 8 Uhr noch schule,
+    /// zum Vorbereiten); ohne Standort nach der Uhrzeit: Schultag 6–15 Uhr = schule
+    public static func bestimme(jetzt: Date = Date(), frei: [FreierTag] = [], hier: Ort? = nil, schule: Ort? = nil, zuhause: Ort? = nil) -> Kontext {
+        let k = Zeit.kalender
+        let wt = k.component(.weekday, from: jetzt), h = k.component(.hour, from: jetzt)
+        if wt == 1 || wt == 7 || FreieTage.am(frei, jetzt) != nil { return .frei }
+        if let hier {
+            if let s = schule, hier.abstand(s) < 500 { return .schule }
+            if let z = zuhause, hier.abstand(z) < 300 { return h < 8 ? .schule : .zuhause }
+        }
+        return (6..<15).contains(h) ? .schule : .zuhause
+    }
+}

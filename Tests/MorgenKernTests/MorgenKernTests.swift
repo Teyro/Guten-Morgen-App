@@ -250,6 +250,17 @@ final class MorgenKernTests: XCTestCase {
         XCTAssertEqual(tg.haupt(schlecht: ["PIZZA"])?.menue, "Menü 2")
     }
 
+    func testKontext() {
+        let schule = Kontext.Ort(lat: 53.5703, lon: 10.1253), zuhause = Kontext.Ort(lat: 53.60, lon: 10.05)
+        XCTAssertEqual(Kontext.bestimme(jetzt: tag(2026, 11, 14, 10)), .frei) // Samstag
+        XCTAssertEqual(Kontext.bestimme(jetzt: tag(2026, 11, 9, 10), hier: Kontext.Ort(lat: 53.5705, lon: 10.1255), schule: schule, zuhause: zuhause), .schule)
+        XCTAssertEqual(Kontext.bestimme(jetzt: tag(2026, 11, 9, 7), hier: zuhause, schule: schule, zuhause: zuhause), .schule) // morgens zu Hause
+        XCTAssertEqual(Kontext.bestimme(jetzt: tag(2026, 11, 9, 17), hier: zuhause, schule: schule, zuhause: zuhause), .zuhause)
+        XCTAssertEqual(Kontext.bestimme(jetzt: tag(2026, 11, 9, 10)), .schule) // ohne Standort nach Uhrzeit
+        XCTAssertEqual(Kontext.bestimme(jetzt: tag(2026, 11, 9, 18)), .zuhause)
+        XCTAssertEqual(schule.abstand(zuhause), 6200, accuracy: 300)
+    }
+
     func testEinstellungenAlteDaten() {
         let e = MorgenEinstellungen.aus(json: #"{"vorlauf": 60}"#)
         XCTAssertEqual(e?.vorlauf, 60)

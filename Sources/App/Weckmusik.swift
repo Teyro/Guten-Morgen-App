@@ -9,12 +9,14 @@ import MorgenKern
 @MainActor
 @Observable
 final class Weckmusik {
-    enum Quelle: String, Codable, CaseIterable { case aus, apple, datei }
+    enum Quelle: String, Codable, CaseIterable { case aus, apple, datei, spotify, kurzbefehl }
 
     var quelle: Quelle { didSet { UserDefaults.standard.set(quelle.rawValue, forKey: "musikQuelle") } }
     var titel: String { didSet { UserDefaults.standard.set(titel, forKey: "musikTitel") } }
     var einblendenSek: Int { didSet { UserDefaults.standard.set(einblendenSek, forKey: "musikEinblenden") } }
     var zielLautstaerke: Double { didSet { UserDefaults.standard.set(zielLautstaerke, forKey: "musikLautstaerke") } }
+    /// Spotify-Link (Teilen → Link kopieren) bzw. Name eines Kurzbefehls
+    var link: String { didSet { UserDefaults.standard.set(link, forKey: "musikLink") } }
     private var appleID: UInt64 { didSet { UserDefaults.standard.set(String(appleID), forKey: "musikAppleID") } }
 
     var klingelt = false
@@ -31,6 +33,7 @@ final class Weckmusik {
         einblendenSek = d.object(forKey: "musikEinblenden") as? Int ?? 60
         zielLautstaerke = d.object(forKey: "musikLautstaerke") as? Double ?? 0.6
         appleID = UInt64(d.string(forKey: "musikAppleID") ?? "") ?? 0
+        link = d.string(forKey: "musikLink") ?? ""
     }
 
     static var dateiURL: URL {
@@ -101,6 +104,9 @@ final class Weckmusik {
             }
         case .datei:
             if let s = try? AVAudioPlayer(contentsOf: Weckmusik.dateiURL) { s.numberOfLoops = -1; s.volume = 1; s.play(); spieler = s; laeuft = true }
+        case .spotify, .kurzbefehl:
+            // Andere Apps lassen sich nur öffnen, nicht fernsteuern: Spotify-Link bzw. Kurzbefehl starten (App ist im Nachtmodus vorne)
+            if let u = fremdeURL { UIApplication.shared.open(u); laeuft = true }
         case .aus: break
         }
         if !laeuft, let s = try? AVAudioPlayer(data: Weckmusik.weckton()) { s.numberOfLoops = -1; s.play(); spieler = s }
@@ -117,6 +123,30 @@ final class Weckmusik {
         }
         RunLoop.main.add(t, forMode: .common)
         blendTimer = t
+    }
+
+    /// Was im Nachtmodus angezeigt wird
+    var anzeige: String {
+        switch quelle {
+        case .spotify: return "Spotify"
+        case .kurzbefehl: return link.isEmpty ? "Kurzbefehl" : "„\(link)“"
+        case .aus: return "Weckton"
+        default: return titel
+        }
+    }
+
+    /// spotify:… bzw. https://open.spotify.com/… → spotify:typ:id; Kurzbefehl → shortcuts://run-shortcut?name=…
+    var fremdeURL: URL? {
+        let l = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !l.isEmpty else { return nil }
+        if quelle == .kurzbefehl { return URL(string: "shortcuts://run-shortcut?name=" + (l.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? l)) }
+        if l.hasPrefix("spotify:") { return URL(string: l) }
+        if let u = URL(string: l), u.host?.contains("spotify.com") == true {
+            let teile = u.path.split(separator: "/").map(String.init).filter { !$0.hasPrefix("intl-") }
+            if teile.count >= 2 { return URL(string: "spotify:\(teile[0]):\(teile[1])") }
+            return u
+        }
+        return URL(string: l)
     }
 
     func schlummern(minuten: Int = 9) {
@@ -163,30 +193,53 @@ final class Weckmusik {
     }
 }
 
-/// Titel aus der Mediathek wählen (Apple Music, auch geladene Titel)
-struct MediathekWahl: UIViewControllerRepresentable {
+/// Titel aus der Mediathek wählen – eigene Liste statt der System-Auswahl (die blieb weiß und schloss sich, wenn die
+/// Freigabe fehlte). Fragt zuerst nach der Mediathek-Freigabe; zeigt Titel aus Apple Music, die in der Mediathek sind.
+struct MediathekWahl: View {
     let gewaehlt: (MPMediaItem) -> Void
     @Environment(\.dismiss) private var schliessen
+    @Environment(\.openURL) private var oeffne
+    @State private var titel: [MPMediaItem] = []
+    @State private var status = MPMediaLibrary.authorizationStatus()
+    @State private var suche = ""
+    @State private var laedt = true
 
-    func makeUIViewController(context: Context) -> MPMediaPickerController {
-        let p = MPMediaPickerController(mediaTypes: .music)
-        p.allowsPickingMultipleItems = false
-        p.showsCloudItems = true
-        p.prompt = "Titel zum Wecken"
-        p.delegate = context.coordinator
-        return p
-    }
-    func updateUIViewController(_ uiViewController: MPMediaPickerController, context: Context) {}
-    func makeCoordinator() -> Koordinator { Koordinator(self) }
-
-    final class Koordinator: NSObject, MPMediaPickerControllerDelegate {
-        let eltern: MediathekWahl
-        init(_ e: MediathekWahl) { eltern = e }
-        func mediaPicker(_ mediaPicker: MPMediaPickerController, didPickMediaItems c: MPMediaItemCollection) {
-            if let i = c.items.first { eltern.gewaehlt(i) }
-            mediaPicker.dismiss(animated: true)
+    var body: some View {
+        NavigationStack {
+            List {
+                if status == .denied || status == .restricted {
+                    Section {
+                        Text("Guten Morgen darf nicht auf deine Mediathek zugreifen.")
+                        Button("iPhone-Einstellungen öffnen") { if let u = URL(string: UIApplication.openSettingsURLString) { oeffne(u) } }
+                    }
+                } else if laedt {
+                    ProgressView("Mediathek wird gelesen …")
+                } else if titel.isEmpty {
+                    Text("Keine Titel in der Mediathek. In Apple Music Titel „Zur Mediathek hinzufügen“ – dann erscheinen sie hier.").foregroundStyle(.secondary)
+                }
+                let treffer = suche.isEmpty ? titel : titel.filter { (($0.title ?? "") + " " + ($0.artist ?? "")).localizedCaseInsensitiveContains(suche) }
+                ForEach(Array(treffer.prefix(400)), id: \.persistentID) { t in
+                    Button { gewaehlt(t); schliessen() } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(t.title ?? "Ohne Titel").foregroundStyle(.primary)
+                            Text(t.artist ?? "").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $suche, prompt: "Titel oder Künstler")
+            .navigationTitle("Weckmusik")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { schliessen() } } }
+            .task {
+                if status == .notDetermined { status = await withCheckedContinuation { k in MPMediaLibrary.requestAuthorization { k.resume(returning: $0) } } }
+                if status == .authorized {
+                    let q = MPMediaQuery.songs()
+                    titel = (q.items ?? []).sorted { ($0.title ?? "") < ($1.title ?? "") }
+                }
+                laedt = false
+            }
         }
-        func mediaPickerDidCancel(_ mediaPicker: MPMediaPickerController) { mediaPicker.dismiss(animated: true) }
     }
 }
 
@@ -217,7 +270,7 @@ struct NachtAnsicht: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Label(w.minuten.map { "Wecker \(Zeit.hhmm($0)) · \(musik.quelle == .aus ? "Weckton" : musik.titel)" } ?? "kein Wecker", systemImage: "alarm")
+                    Label(w.minuten.map { "Wecker \(Zeit.hhmm($0)) · \(musik.anzeige)" } ?? "kein Wecker", systemImage: "alarm")
                         .foregroundStyle(.white.opacity(0.6))
                     Button("Nachtmodus beenden") { musik.nachtBeenden(); Task { await kern.nachtVorbei() }; schliessen() }
                         .foregroundStyle(.white.opacity(0.5)).padding(.top, 30)

@@ -12,6 +12,8 @@
 	<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string></dict>
 	<key>NSCalendarsFullAccessUsageDescription</key><string>Für die Weckzeit im Widget.</string>
+	<key>NSWidgetWantsLocation</key><true/>
+	<key>NSLocationWhenInUseUsageDescription</key><string>Damit das Widget in der Schule die Schul-Infos und zu Hause Termine und Post zeigt.</string>
 	<key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
 </plist>

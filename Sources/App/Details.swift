@@ -12,6 +12,17 @@ extension View {
     }
 }
 
+extension View {
+    /// Getöntes, interaktives Glas für Knöpfe (iOS 26), sonst farbiger Verlauf
+    @ViewBuilder func glasKnopf(_ farbe: Color, _ radius: CGFloat = 20) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(farbe).interactive(), in: .rect(cornerRadius: radius))
+        } else {
+            self.background(farbe.gradient, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+        }
+    }
+}
+
 /// Farben wie das Kantinen-Skript (Design „kantine“: warmes Dunkelbraun, Orange)
 enum Kantine {
     static let oben = Color(red: 0x2b / 255, green: 0x19 / 255, blue: 0x10 / 255)
