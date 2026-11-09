@@ -98,6 +98,17 @@ public enum Mensa {
         }
     }
 
+    // Abgelehnte Zugangsdaten nicht immer wieder probieren (sonst sperrt das Portal das Konto) – erst nach einer Änderung
+    static func merkmal(_ benutzer: String, _ passwort: String) -> String { String((benutzer + "\u{1}" + passwort).utf8.reduce(UInt64(5381)) { ($0 << 5) &+ $0 &+ UInt64($1) }) }
+    public static func darfAnmelden(_ d: UserDefaults, benutzer: String, passwort: String) -> Bool {
+        d.string(forKey: "mensaAbgelehnt") != merkmal(benutzer, passwort)
+    }
+    /// Nach einem Abruf aufrufen: bei abgelehnter Anmeldung merken, sonst vergessen
+    public static func merke(_ d: UserDefaults, fehler: Error?, benutzer: String, passwort: String) {
+        if case .anmeldung? = fehler as? Fehler { d.set(merkmal(benutzer, passwort), forKey: "mensaAbgelehnt") }
+        else if fehler == nil { d.removeObject(forKey: "mensaAbgelehnt") }
+    }
+
     /// Heute – am Wochenende schon der Montag
     public static func zielTag(_ jetzt: Date = Date()) -> String {
         let k = Zeit.kalender

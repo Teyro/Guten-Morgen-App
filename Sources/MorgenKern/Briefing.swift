@@ -59,16 +59,16 @@ public enum Briefing {
         if !d.post.isEmpty { s.append(d.post) }
         // Schul-Infos: heute – oder (ab 16 Uhr) schon für den nächsten Schultag
         let tag = d.schulTag ?? d.jetzt
-        let heute = k.isDate(tag, inSameDayAs: d.jetzt)
-        let schultag = heute ? d.frei == nil && (2...6).contains(k.component(.weekday, from: d.jetzt)) : true
-        let wann = heute ? "" : (k.isDate(tag, inSameDayAs: k.date(byAdding: .day, value: 1, to: d.jetzt) ?? d.jetzt) ? "Morgen" : "Am " + Zeit.wochentag(tag))
+        let schuleHeute = k.isDate(tag, inSameDayAs: d.jetzt)
+        let schultag = schuleHeute ? d.frei == nil && (2...6).contains(k.component(.weekday, from: d.jetzt)) : true
+        let wann = schuleHeute ? "" : (k.isDate(tag, inSameDayAs: k.date(byAdding: .day, value: 1, to: d.jetzt) ?? d.jetzt) ? "Morgen" : "Am " + Zeit.wochentag(tag))
         var schule: [String] = []
         if let v = d.vertretung, schultag, v.datum == nil || v.datum == Zeit.iso(tag) { schule.append(v.satz(haeuser: d.haeuser)) }
-        if schultag && d.obst { schule.append(heute ? "Heute kommt Schulobst." : "Es kommt Schulobst.") }
+        if schultag && d.obst { schule.append(schuleHeute ? "Heute kommt Schulobst." : "Es kommt Schulobst.") }
         if let m = d.mensa, schultag, m.datum == Zeit.iso(tag) {
             var mm = m
             if let h = m.haupt(favoriten: d.mensaWahl.favoriten, meiden: d.mensaWahl.meiden) { mm.gerichte = [h] }
-            schule.append(mm.satz(heute: heute))
+            schule.append(mm.satz(heute: schuleHeute))
         }
         if !schule.isEmpty { s.append((wann.isEmpty ? "" : wann + ": ") + schule.joined(separator: " ")) }
         s.append(h < 18 ? "Einen schönen Tag!" : "Einen schönen Abend!")

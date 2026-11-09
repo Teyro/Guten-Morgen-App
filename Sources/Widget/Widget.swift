@@ -120,12 +120,15 @@ struct MorgenZeitleiste: TimelineProvider {
         // Kantine: Plan (zwei Wochen) einmal am Tag; fehlt der Schultag, höchstens stündlich neu versuchen
         var mensaPlan = d.data(forKey: "mensaPlan").flatMap { try? JSONDecoder().decode(MensaPlan.self, from: $0) }
         let mensaAlt = mensaPlan.map { !Zeit.kalender.isDateInToday($0.stand) } ?? true
-        if e.mensaBereit, !geheim.mensa.isEmpty, mensaAlt || mensaPlan?.tag(ziel) == nil, stand("mensaVersuch") > 3600 || mensaAlt {
+        if e.mensaBereit, !geheim.mensa.isEmpty, mensaAlt || mensaPlan?.tag(ziel) == nil, stand("mensaVersuch") > 3600,
+           Mensa.darfAnmelden(d, benutzer: e.mensaBenutzer, passwort: geheim.mensa) {
             d.set(jetzt.timeIntervalSince1970, forKey: "mensaVersuch")
-            if let neu = try? await Mensa.ladePlan(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: geheim.mensa) {
+            do {
+                let neu = try await Mensa.ladePlan(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: geheim.mensa)
                 mensaPlan = neu
                 d.set(try? JSONEncoder().encode(neu), forKey: "mensaPlan")
-            }
+                Mensa.merke(d, fehler: nil, benutzer: e.mensaBenutzer, passwort: geheim.mensa)
+            } catch { Mensa.merke(d, fehler: error, benutzer: e.mensaBenutzer, passwort: geheim.mensa) }
         }
         // Schulobst: Kalender höchstens alle 12 Stunden
         var obstTage = Set(d.stringArray(forKey: "obst") ?? [])

@@ -106,7 +106,8 @@ final class Kern {
         let ziel = Zeit.iso(schulTag)
         async let v: Result<VertretungsPlan, Error>? = e.vertretung && !e.vertretungLink.isEmpty && !e.kuerzel.isEmpty
             ? await versuch { try await Vertretung.laden(link: e.vertretungLink, kuerzel: e.kuerzel, passwort: pw, ziel: ziel) } : nil
-        async let m: Result<MensaPlan, Error>? = e.mensaBereit && !mpw.isEmpty
+        let mensaErlaubt = Mensa.darfAnmelden(.standard, benutzer: e.mensaBenutzer, passwort: mpw)
+        async let m: Result<MensaPlan, Error>? = e.mensaBereit && !mpw.isEmpty && mensaErlaubt
             ? await versuch { try await Mensa.ladePlan(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: mpw) } : nil
         async let s: TimeInterval? = e.gesundheit ? await Gesundheit.schlafLetzteNacht() : nil
         async let o: Set<String>? = e.obstBereit ? try? await SchulKalender.laden(e.obstKalender) : nil
@@ -117,8 +118,11 @@ final class Kern {
         }
         switch await m {
         case .success(let t)?: mensaPlan = t; mensaFehler = t.tag(ziel) == nil ? "Für \(schulTagName) steht nichts im Speiseplan" : ""
+            Mensa.merke(.standard, fehler: nil, benutzer: e.mensaBenutzer, passwort: mpw)
         case .failure(let f)?: mensaFehler = f.localizedDescription
-        case nil: mensaPlan = nil; mensaFehler = e.mensa && mpw.isEmpty ? "Kantinen-Passwort fehlt" : ""
+            Mensa.merke(.standard, fehler: f, benutzer: e.mensaBenutzer, passwort: mpw)
+        case nil: mensaPlan = nil
+            mensaFehler = e.mensa && mpw.isEmpty ? "Kantinen-Passwort fehlt" : !mensaErlaubt ? "Kantinen-Zugang wurde abgelehnt – bitte Benutzer oder Passwort prüfen" : ""
         }
         if let tage = await o { obstTage = tage } else if !e.obstBereit { obstTage = [] }
         schlaf = await s
