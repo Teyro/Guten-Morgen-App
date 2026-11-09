@@ -193,10 +193,10 @@ public enum Mensa {
         let t = text(ab)
         func greif(_ muster: String) -> Double? {
             guard let r = t.range(of: muster, options: [.regularExpression, .caseInsensitive]) else { return nil }
-            let zahl = String(t[r]).replacingOccurrences(of: #"^.*?(-?[d.]+,d{2}).*$"#, with: "$1", options: .regularExpression)
+            let zahl = String(t[r]).replacingOccurrences(of: #"^.*?(-?[\d.]+,\d{2}).*$"#, with: "$1", options: .regularExpression)
             return Double(zahl.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: "."))
         }
-        return greif(#"Verf(ü|ue)gbar:?s*-?[d.]+,d{2}s*€"#) ?? greif(#"GUTHABENs*(GESAMT)s*-?[d.]+,d{2}s*€"#)
+        return greif(#"Verf(ü|ue)gbar:?\s*-?[\d.]+,\d{2}\s*€"#) ?? greif(#"GUTHABEN\s*\(GESAMT\)\s*-?[\d.]+,\d{2}\s*€"#)
     }
 
     // MARK: Lesen (öffentlich für Tests)
