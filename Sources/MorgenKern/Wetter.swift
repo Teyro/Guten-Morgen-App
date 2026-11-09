@@ -6,6 +6,7 @@ public struct WetterTag: Codable, Hashable, Sendable {
     public var min: Double
     public var regen: Int
     public var wind: Double
+    public init(code: Int, max: Double, min: Double, regen: Int, wind: Double) { self.code = code; self.max = max; self.min = min; self.regen = regen; self.wind = wind }
 }
 
 public struct Wetter: Codable, Hashable, Sendable {
@@ -14,6 +15,9 @@ public struct Wetter: Codable, Hashable, Sendable {
     public var heute: WetterTag?
     public var morgen: WetterTag?
     public var stand: Date
+    public init(jetzt: Double?, jetztCode: Int?, heute: WetterTag?, morgen: WetterTag?, stand: Date) {
+        self.jetzt = jetzt; self.jetztCode = jetztCode; self.heute = heute; self.morgen = morgen; self.stand = stand
+    }
 
     public static let beschreibung: [Int: String] = [
         0: "klar", 1: "überwiegend klar", 2: "teils bewölkt", 3: "bedeckt", 45: "neblig", 48: "neblig mit Reif",

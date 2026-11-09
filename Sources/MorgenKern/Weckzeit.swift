@@ -22,6 +22,7 @@ public struct Weckzeit: Hashable, Sendable {
     public var minuten: Int?
     public var grund: String
     public var tag: Date
+    public init(minuten: Int?, grund: String, tag: Date) { self.minuten = minuten; self.grund = grund; self.tag = tag }
 
     /// Wann am [tag] geweckt wird: Wochentags-Zeit, früher wegen des ersten Termins, frei in Ferien/an Feiertagen
     public static func berechne(tag: Date, termine: [Termin], frei: FreierTag?, e: MorgenEinstellungen) -> Weckzeit {

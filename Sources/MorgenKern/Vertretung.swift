@@ -5,8 +5,8 @@ import Compression
 
 /// Was im Vertretungsplan (Word-Datei im Cloud-Ordner der Schule) für ein Kürzel steht
 public struct VertretungsPlan: Codable, Hashable, Sendable {
-    public struct Stunde: Codable, Hashable, Sendable { public var stunde: String; public var klasse: String }
-    public struct Pause: Codable, Hashable, Sendable { public var pause: String; public var ort: String }
+    public struct Stunde: Codable, Hashable, Sendable { public var stunde: String; public var klasse: String; public init(stunde: String, klasse: String) { self.stunde = stunde; self.klasse = klasse } }
+    public struct Pause: Codable, Hashable, Sendable { public var pause: String; public var ort: String; public init(pause: String, ort: String) { self.pause = pause; self.ort = ort } }
     public var datum: String?
     public var stunden: [Stunde] = []
     public var pausen: [Pause] = []
@@ -15,6 +15,7 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var hinweise: [String] = []
     public var fehlen: [String] = []
     public var datei = ""
+    public init() {}
 
     /// „2. Stunde 2c, 2. Pause Aufsicht Mensa.“ – leer, wenn nichts für das Kürzel drinsteht
     public func satz() -> String {
