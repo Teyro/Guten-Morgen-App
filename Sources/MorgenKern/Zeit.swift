@@ -30,3 +30,14 @@ public enum Zeit {
     public static let wochentage = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"]
     public static func wochentag(_ d: Date) -> String { wochentage[(kalender.component(.weekday, from: d) - 1) % 7] }
 }
+
+public extension Date {
+    /// „14:30“ – immer deutsch, unabhängig von der Spracheinstellung
+    var uhrzeit: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "de_DE")
+        f.timeZone = Zeit.kalender.timeZone
+        f.dateFormat = "HH:mm"
+        return f.string(from: self)
+    }
+}

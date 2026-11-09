@@ -113,7 +113,7 @@ struct MorgenWidgetAnsicht: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("⏰ \(weckText) \(weckTag)").font(.headline)
                     if let w = e.wetter?.heute { Text("\(Int(w.min.rounded()))–\(Int(w.max.rounded()))° · Regen \(w.regen) %").font(.caption) }
-                    if let t = e.termin { Text("\(t.start.formatted(date: .omitted, time: .shortened)) \(t.titel)").font(.caption).lineLimit(1) }
+                    if let t = e.termin { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption).lineLimit(1) }
                 }
             #endif
             case .systemMedium: mittel
@@ -145,7 +145,7 @@ struct MorgenWidgetAnsicht: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let g = e.wecker?.grund, !g.isEmpty { Text(g).font(.caption).lineLimit(2).opacity(0.9) }
                 if let t = e.termin {
-                    Label("\(t.start.formatted(date: .omitted, time: .shortened)) \(t.titel)", systemImage: "calendar").font(.caption.weight(.semibold)).lineLimit(2)
+                    Label("\(t.start.uhrzeit) \(t.titel)", systemImage: "calendar").font(.caption.weight(.semibold)).lineLimit(2)
                 }
                 if !e.post.isEmpty { Label(e.post, systemImage: "shippingbox.fill").font(.caption).lineLimit(3) }
                 if let w = e.wetter, let t = w.heute, t.regen >= 50 { Label("Regen \(t.regen) %", systemImage: "umbrella.fill").font(.caption) }

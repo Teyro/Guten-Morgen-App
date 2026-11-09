@@ -154,7 +154,7 @@ struct TermineKarte: View {
             if termine.isEmpty && erinnerungen.isEmpty { Text("Keine Termine.").foregroundStyle(.secondary) }
             ForEach(termine.sorted { $0.start < $1.start }, id: \.self) { t in
                 HStack {
-                    Text(t.ganztags ? "ganztägig" : t.start.formatted(date: .omitted, time: .shortened)).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
+                    Text(t.ganztags ? "ganztägig" : t.start.uhrzeit).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
                     Text(t.titel)
                 }
             }
