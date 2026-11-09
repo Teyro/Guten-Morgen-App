@@ -1,0 +1,5 @@
+build/
+bilder-ci/
+*.xcodeproj
+.build/
+ressourcen/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png

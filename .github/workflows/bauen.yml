@@ -1,0 +1,70 @@
+name: Bauen und testen
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ios:
+    name: iPhone
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Kern testen
+        run: swift test
+      - name: App bauen
+        run: |
+          VERSION=$(cat VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF#refs/tags/v}"; fi
+          ./scripts/baue.sh "$VERSION"
+      - name: Bildschirmfotos (Simulator)
+        timeout-minutes: 20
+        run: |
+          xcodebuild -project GutenMorgen.xcodeproj -scheme GutenMorgen -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          APP=build/sim/Build/Products/Debug-iphonesimulator/GutenMorgen.app
+          test -d "$APP"
+          GERAET=$(xcrun simctl list devices available -j | node -e 'const d=JSON.parse(require("fs").readFileSync(0)).devices;const l=Object.entries(d).filter(([k])=>k.includes("iOS")).flatMap(([,v])=>v).filter(x=>/^iPhone \d+( Pro)?$/.test(x.name));console.log((l.find(x=>/Pro$/.test(x.name))||l[0]).udid)')
+          xcrun simctl boot "$GERAET"
+          xcrun simctl bootstatus "$GERAET" -b
+          xcrun simctl install "$GERAET" "$APP"
+          mkdir -p bilder-ci
+          for m in light dark; do
+            xcrun simctl ui "$GERAET" appearance $m
+            for a in heute einstellungen; do
+              SIMCTL_CHILD_GM_ANSICHT=$a xcrun simctl launch --terminate-running-process "$GERAET" de.teyro.gutenmorgen --vorschau
+              sleep 7
+              xcrun simctl io "$GERAET" screenshot "bilder-ci/${m}_$a.png"
+            done
+          done
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: bilder
+          path: bilder-ci
+      - uses: actions/upload-artifact@v5
+        with:
+          name: app
+          path: build/GutenMorgen-iOS-*.ipa
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: app
+          path: dateien
+      - name: IPA an das Release hängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Guten Morgen ${GITHUB_REF_NAME#v}" --notes "IPA zum Signieren (z. B. mit Signulous)."
+          gh release upload "$GITHUB_REF_NAME" dateien/* --clobber -R "$GITHUB_REPOSITORY"
