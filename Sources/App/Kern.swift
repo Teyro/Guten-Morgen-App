@@ -172,7 +172,7 @@ final class Kern {
         await Schulalltag.aktualisieren(heute, an: einstellungen.schulAktivitaet)
         // Unterwegs: keine Morgenroutine zu Hause (Sensor „unbekannt“ → die Automation löst nicht aus)
         if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(unterwegs ? nil : (Wecker.gestellt ?? naechsterWecker.datum)) }
-        Hintergrund.planen(wecker: naechsterWecker.datum, bloecke: heute)
+        HintergrundLauf.planen(wecker: naechsterWecker.datum, bloecke: heute)
         Uhr.shared.senden(self)
     }
 

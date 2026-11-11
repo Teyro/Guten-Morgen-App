@@ -25,7 +25,7 @@ struct GutenMorgenApp: App {
         let k = Kern()
         _kern = State(initialValue: k)
         // Hintergrund-Lauf muss vor dem Ende des Starts angemeldet sein
-        if !k.vorschau { Hintergrund.anmelden(k) }
+        if !k.vorschau { HintergrundLauf.anmelden(k) }
     }
     var body: some Scene {
         WindowGroup {

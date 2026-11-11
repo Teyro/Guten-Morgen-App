@@ -74,7 +74,7 @@ enum Schulalltag {
 }
 
 /// Hintergrund: vor dem Wecken Fahrzeit und Wetter prüfen (früher wecken), im Schulalltag die Live-Aktivität weiterschalten
-enum Hintergrund {
+enum HintergrundLauf {
     static let kennung = "de.teyro.gutenmorgen.aktualisieren"
 
     @MainActor
