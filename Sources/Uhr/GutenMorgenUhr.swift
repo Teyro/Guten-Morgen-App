@@ -73,7 +73,7 @@ struct UhrAnsicht: View {
                             }
                             if let d = danach {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Danach · \(d.von.formatted(date: .omitted, time: .shortened))").font(.footnote).foregroundStyle(.secondary)
+                                    Text("Danach · \(Zeit.uhrzeit(d.von))").font(.footnote).foregroundStyle(.secondary)
                                     Text(d.art == .pause ? d.titel : "\(d.marke) \(d.text)").font(.body)
                                 }
                             }

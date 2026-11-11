@@ -27,7 +27,7 @@ struct JetztDanach: View {
                 Text("Gleich: \(d.titel)").font(.caption).foregroundStyle(.secondary)
             }
             if let d {
-                Text("\(d.von.formatted(date: .omitted, time: .shortened)) · " + (d.art == .pause ? d.titel : "\(d.marke) \(d.text)"))
+                Text("\(Zeit.uhrzeit(d.von)) · " + (d.art == .pause ? d.titel : "\(d.marke) \(d.text)"))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             } else if j != nil {
                 Text("Danach: Schluss").font(.caption2).foregroundStyle(.secondary)
@@ -86,8 +86,8 @@ struct SchultagAnsicht: View {
         let j = jd.jetzt, d = jd.danach
         switch familie {
         case .accessoryInline:
-            if let j { Text("\(j.marke) \(j.art == .pause ? "Pause" : j.text) bis \(j.bis.formatted(date: .omitted, time: .shortened))") }
-            else if let d { Text("\(d.von.formatted(date: .omitted, time: .shortened)) \(d.marke) \(d.text)") }
+            if let j { Text("\(j.marke) \(j.art == .pause ? "Pause" : j.text) bis \(Zeit.uhrzeit(j.bis))") }
+            else if let d { Text("\(Zeit.uhrzeit(d.von)) \(d.marke) \(d.text)") }
             else { Text("Heute kein Unterricht") }
         default:
             if j == nil && d == nil {
@@ -122,7 +122,7 @@ struct SchulTagLiveWidget: Widget {
                     Text(j.map { $0.art == .pause ? "Pause" : $0.text } ?? d.map { "Gleich: \($0.text)" } ?? "").font(.headline).lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if let d { Text("Danach \(d.von.formatted(date: .omitted, time: .shortened)): " + (d.art == .pause ? d.titel : d.text)).font(.caption).foregroundStyle(.secondary) }
+                    if let d { Text("Danach \(Zeit.uhrzeit(d.von)): " + (d.art == .pause ? d.titel : d.text)).font(.caption).foregroundStyle(.secondary) }
                 }
             } compactLeading: {
                 Text(j?.marke ?? d?.marke ?? "").font(.caption.bold()).foregroundStyle(.orange)

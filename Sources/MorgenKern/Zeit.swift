@@ -15,6 +15,8 @@ public enum Zeit {
         return t[0] * 60 + t[1]
     }
     public static func hhmm(_ m: Int) -> String { String(format: "%02d:%02d", m / 60, m % 60) }
+    /// Uhrzeit eines Datums als „08:30“ (immer deutsche Zeit, unabhängig von Sprache/Zeitzone des Geräts)
+    public static func uhrzeit(_ d: Date) -> String { hhmm(kalender.component(.hour, from: d) * 60 + kalender.component(.minute, from: d)) }
     /// „sechs Uhr fünfzehn“ wäre zu viel – Siri liest „6:15 Uhr“ gut vor
     public static func sprechen(_ m: Int) -> String { m % 60 == 0 ? "\(m / 60) Uhr" : "\(m / 60) Uhr \(m % 60)" }
 

@@ -272,7 +272,7 @@ struct SchuleKarte: View {
             }
             // eigene Stunden (Vertretungen und Aufsichten stehen darunter beim Vertretungsplan)
             ForEach(kern.schultag.filter { $0.art == .unterricht }, id: \.von) { b in
-                Zeile(marke: b.marke, farbe: .blue, titel: b.text, unter: "\(b.von.formatted(date: .omitted, time: .shortened))–\(b.bis.formatted(date: .omitted, time: .shortened))")
+                Zeile(marke: b.marke, farbe: .blue, titel: b.text, unter: Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis))
             }
             if e.vertretung && !e.vertretungLink.isEmpty {
                 Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e) } }.buttonStyle(.plain)
