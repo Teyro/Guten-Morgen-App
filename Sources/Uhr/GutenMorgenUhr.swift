@@ -60,7 +60,8 @@ struct UhrAnsicht: View {
                         }
                     }
                     let jd = Stundenplan.jetzt(p.heute, t.date)
-                    let jetzt = jd.jetzt, danach = jd.danach
+                    let jetzt = jd.jetzt
+                    let danach = jd.danach
                     if jetzt != nil || danach != nil {
                         Section("Jetzt") {
                             if let j = jetzt {
@@ -83,7 +84,7 @@ struct UhrAnsicht: View {
                             ForEach(p.schultag.filter { $0.art != .pause }, id: \.von) { b in
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(b.marke).font(.footnote.monospacedDigit()).frame(width: 30, alignment: .leading)
-                                    Text(b.text).font(.footnote).foregroundStyle(b.art == .frei ? .secondary : b.art == .unterricht ? .primary : .orange)
+                                    Text(b.text).font(.footnote).foregroundStyle(b.art == .frei ? Color.secondary : b.art == .unterricht ? Color.primary : Color.orange)
                                 }
                             }
                         }
