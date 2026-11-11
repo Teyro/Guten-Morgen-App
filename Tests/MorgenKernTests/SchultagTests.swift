@@ -102,3 +102,71 @@ final class SchultagTests: XCTestCase {
         XCTAssertEqual(MorgenEinstellungen.aus(json: n.json())?.unterricht.first?.klasse, "4a")
     }
 }
+
+final class UntisTests: XCTestCase {
+    func testQRUndLink() {
+        let q = Untis.qr("untis://setschool?url=nessa.webuntis.com&school=gs-oejendorf&user=Sta&key=ABCDEFGH&schoolNumber=123")
+        XCTAssertEqual(q?.basis, "https://nessa.webuntis.com")
+        XCTAssertEqual(q?.schule, "gs-oejendorf")
+        XCTAssertEqual(q?.benutzer, "Sta")
+        XCTAssertEqual(q?.schluessel, "ABCDEFGH")
+        XCTAssertNotNil(Untis.qr("untis://setschool?url=nessa.webuntis.com&school=x&user=Sta"))
+        let l = Untis.zerlege("https://nessa.webuntis.com/WebUntis/?school=gs-oejendorf#/basic/login")
+        XCTAssertEqual(l?.basis, "https://nessa.webuntis.com")
+        XCTAssertEqual(l?.schule, "gs-oejendorf")
+        XCTAssertNil(Untis.zerlege("http://unsicher.de/?school=x"))
+    }
+
+    func testStundenUndKlassen() {
+        // Mo 9.11.: 1. Std 5a Ma (ich, id 7), 2. Std 5a FÖ (ich + Kla), Di 10.11.: 6b De (ich)
+        let meine: [[String: Any]] = [
+            ["date": 20261109, "startTime": 830, "endTime": 915, "kl": [["name": "5a"]], "te": [["id": 7, "name": "Sta"]], "su": [["name": "Ma", "longname": "Mathematik"]], "ro": [["name": "R12"]]],
+            ["date": 20261109, "startTime": 915, "endTime": 1000, "kl": [["name": "5a"]], "te": [["id": 3, "name": "Kla"], ["id": 7, "name": "Sta"]], "su": [["name": "FÖ", "longname": "Förderkreis"]]],
+            ["date": 20261110, "startTime": 830, "endTime": 915, "kl": [["name": "6b"]], "te": [["id": 7, "name": "Sta"]], "su": [["name": "De"]], "code": "cancelled"],
+        ]
+        let klasse5a: [[String: Any]] = [
+            ["date": 20261109, "startTime": 830, "endTime": 915, "kl": [["name": "5a"]], "te": [["id": 7, "name": "Sta"]], "su": [["name": "Ma"]]],
+            ["date": 20261109, "startTime": 1025, "endTime": 1110, "kl": [["name": "5a"]], "te": [["id": 3, "name": "Kla"]], "su": [["name": "De"]]],
+            ["date": 20261110, "startTime": 1025, "endTime": 1110, "kl": [["name": "5a"]], "te": [["id": 4, "name": "Mül"]], "su": [["name": "Sp"]]],
+        ]
+        let s = Untis.stunden(meine)
+        XCTAssertEqual(s.count, 3)
+        XCTAssertEqual(s[0].von, 510)
+        XCTAssertTrue(s[1].foerder)
+        XCTAssertTrue(s[2].entfaellt)
+        let st = UntisStand(meine: s, klassen: ["5a": Untis.stunden(klasse5a)], ich: 7, kuerzel: "Sta")
+        let k = Untis.klassen(st)
+        XCTAssertEqual(k.map(\.klasse), ["5a", "6b"])
+        XCTAssertEqual(k[0].faecher.map(\.kurz), ["Ma"])
+        XCTAssertEqual(k[0].foerder, 1)
+        XCTAssertEqual(k[0].doppel, ["Kla"])
+        XCTAssertEqual(Set(k[0].andere.map(\.kuerzel)), ["Kla", "Mül"])
+        // als eigener Stundenplan: Mo 1. und 2. Stunde, Di 1. Stunde
+        let u = Untis.unterricht(st, zeiten: Schulzeit.standard)
+        XCTAssertEqual(u.filter { $0.tag == 2 }.map(\.stunde).sorted(), ["1", "2"])
+        XCTAssertEqual(u.first { $0.tag == 2 && $0.stunde == "1" }?.fach, "Mathematik")
+    }
+
+    func testPostLesen() {
+        let j: [String: Any] = ["briefe": [
+            ["id": "p1", "art": "paket", "datum": "2026-11-11T08:00:00+01:00", "absender": "Thalia", "dienst_name": "DHL", "stand": "zustellung", "abholcode": "", "ereignisse": [["text": "In Zustellung", "zeit": "2026-11-11T07:30:00+01:00"]]],
+            ["id": "b1", "art": "brief", "datum": "2026-11-11", "absender": "Finanzamt", "wichtig": true, "bild": true],
+        ]]
+        let p = PostStand.lesen(j)!
+        XCTAssertEqual(p.pakete.count, 1)
+        XCTAssertEqual(p.briefe.first?.absender, "Finanzamt")
+        XCTAssertEqual(p.gruppen().heute.map(\.id), ["p1"])
+        XCTAssertEqual(p.pakete[0].ereignisse.count, 1)
+    }
+
+    func testUnterwegs() {
+        var e = MorgenEinstellungen()
+        e.zuhauseOrt = Kontext.Ort(lat: 53.55, lon: 10.10)
+        let barsbuettel = Kontext.Ort(lat: 53.567, lon: 10.17)
+        XCTAssertFalse(e.unterwegs(hier: barsbuettel))   // Schalter aus
+        e.unterwegsAn = true
+        XCTAssertTrue(e.unterwegs(hier: barsbuettel))
+        XCTAssertFalse(e.unterwegs(hier: Kontext.Ort(lat: 53.551, lon: 10.101)))
+        XCTAssertFalse(e.unterwegs(hier: nil))
+    }
+}

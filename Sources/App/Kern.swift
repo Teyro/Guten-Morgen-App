@@ -18,6 +18,15 @@ final class Kern {
     var iservPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(iservPasswort, "iserv"); speichern() } } }
     var totpGeheim: String { didSet { if !vorschau { Schluesselbund.speichern(totpGeheim, "totp"); speichern() } } }
     var edupoolToken: String { didSet { if !vorschau { Schluesselbund.speichern(edupoolToken, "edupool"); speichern() } } }
+    var untisPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(untisPasswort, "untis") } } }
+    /// Schlüssel aus dem QR-Code „Untis Mobile“ (für Konten mit zweitem Faktor)
+    var untisSchluessel: String { didSet { if !vorschau { Schluesselbund.speichern(untisSchluessel, "untisSchluessel") } } }
+    var untis: UntisStand? { didSet { merke(untis, "untisStand") } }
+    var untisFehler = ""
+    var postStand: PostStand? { didSet { merke(postStand, "postStand") } }
+    var postFehler = ""
+    /// Gerade nicht zu Hause (Schalter „Unterwegs“ und gespeichertes Zuhause)
+    var unterwegs = false
     var geheim: Geheimnisse { Geheimnisse(mensa: mensaPasswort, freigabe: freigabePasswort, iserv: iservPasswort, totp: totpGeheim, edupool: edupoolToken) }
 
     // Module aus Mein Tag (nativ): zuletzt geladener Stand bleibt gespeichert (Anzeige sofort, Aufgaben auch offline)
@@ -87,7 +96,7 @@ final class Kern {
             token = ""
             mensaPasswort = ""
             freigabePasswort = ""
-            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""
+            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""; untisPasswort = ""; untisSchluessel = ""
             vorschauDaten()
             return
         }
@@ -98,6 +107,10 @@ final class Kern {
         iservPasswort = Schluesselbund.lesen("iserv") ?? ""
         totpGeheim = Schluesselbund.lesen("totp") ?? ""
         edupoolToken = Schluesselbund.lesen("edupool") ?? ""
+        untisPasswort = Schluesselbund.lesen("untis") ?? ""
+        untisSchluessel = Schluesselbund.lesen("untisSchluessel") ?? ""
+        untis = Kern.gemerkt("untisStand")
+        postStand = Kern.gemerkt("postStand")
         abwesend = Kern.gemerkt("abwesendStand")
         stoerungen = Kern.gemerkt("stoerungenStand")
         aufgaben = Kern.gemerkt("aufgabenStand")
@@ -157,9 +170,33 @@ final class Kern {
         let heute = heuteBloecke
         await AufsichtErinnerung.planen(schultag, an: einstellungen.aufsichtErinnern)
         await Schulalltag.aktualisieren(heute, an: einstellungen.schulAktivitaet)
-        if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(Wecker.gestellt ?? naechsterWecker.datum) }
+        // Unterwegs: keine Morgenroutine zu Hause (Sensor „unbekannt“ → die Automation löst nicht aus)
+        if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(unterwegs ? nil : (Wecker.gestellt ?? naechsterWecker.datum)) }
         Hintergrund.planen(wecker: naechsterWecker.datum, bloecke: heute)
         Uhr.shared.senden(self)
+    }
+
+    /// WebUntis: höchstens alle 6 Stunden; mit „übernehmen“ wird die Grundwoche zu „Mein Stundenplan“
+    func untisLaden(erzwingen: Bool = false) async {
+        let e = einstellungen
+        guard e.untisAn, !e.untisLink.isEmpty, !untisPasswort.isEmpty || !untisSchluessel.isEmpty || Untis.qr(e.untisLink) != nil else { return }
+        let d = UserDefaults.standard
+        guard erzwingen || Date().timeIntervalSince1970 - d.double(forKey: "untisGeladen") > 6 * 3600 else { return }
+        do {
+            let st = try await Untis.laden(link: e.untisLink, benutzer: e.untisBenutzer, passwort: untisPasswort, schluessel: untisSchluessel, kuerzel: e.kuerzel)
+            untis = st; untisFehler = ""
+            d.set(Date().timeIntervalSince1970, forKey: "untisGeladen")
+            if e.untisUebernehmen {
+                let neu = Untis.unterricht(st, zeiten: e.schulzeiten)
+                if !neu.isEmpty && neu != einstellungen.unterricht { einstellungen.unterricht = neu }
+            }
+        } catch { untisFehler = error.localizedDescription }
+    }
+
+    /// Post und Pakete (Integration „Briefankündigung“)
+    func postLaden() async {
+        guard ha.eingerichtet, !vorschau else { return }
+        do { postStand = try await ha.post(); postFehler = "" } catch { postFehler = "Post & Pakete nicht erreichbar (Integration „Briefankündigung“ in Home Assistant?)" }
     }
 
     /// Morgenroutine als Automation in Home Assistant anlegen (leer = löschen)
@@ -197,6 +234,7 @@ final class Kern {
         wetter = await w
         if let neu = await f { frei = neu }
         post = await p
+        if mitPost { await postLaden() }
         let pw = freigabePasswort, mpw = mensaPasswort
         let ziel = Zeit.iso(schulTag)
         async let v: Result<VertretungsPlan, Error>? = e.vertretung && !e.vertretungLink.isEmpty && !e.kuerzel.isEmpty
@@ -222,6 +260,7 @@ final class Kern {
         if let tage = await o { obstTage = tage } else if !e.obstBereit { obstTage = [] }
         schlaf = await s
         if e.schulOrt != nil || e.zuhauseOrt != nil { _ = await ortung.einmal() }
+        unterwegs = e.unterwegs(hier: ortung.ort)
         kontext = Kontext.bestimme(frei: frei, hier: ortung.ort, schule: e.schulOrt, zuhause: e.zuhauseOrt)
         if await SchulFokusFilter.schuleAktiv() { kontext = .schule }
         await moduleLaden()
@@ -249,7 +288,7 @@ final class Kern {
 
     func briefingVorlesen() async {
         if !vorschau && wetter == nil { await aktualisieren() }
-        if ha.eingerichtet { for a in einstellungen.morgen { _ = await ha.ausfuehren(a) } }
+        if ha.eingerichtet && !unterwegs { for a in einstellungen.morgen { _ = await ha.ausfuehren(a) } }
         Sprecher.shared.sprechen(briefing())
     }
 
@@ -257,9 +296,15 @@ final class Kern {
     @discardableResult
     func guteNacht(vorlesen: Bool = true) async -> String {
         var d = BriefingDaten()
+        // Unterwegs (z. B. bei Verwandten): statt „Alle Lichter aus“ die Unterwegs-Aktionen (Urlaubsmodus), keine Fenster-Warnung
+        if einstellungen.unterwegsAn, einstellungen.zuhauseOrt != nil, !vorschau {
+            if let l = await ortung.einmal() { unterwegs = einstellungen.unterwegs(hier: Kontext.Ort(lat: l.coordinate.latitude, lon: l.coordinate.longitude)) }
+        }
+        d.unterwegs = unterwegs
         if ha.eingerichtet {
-            for a in einstellungen.nacht { if await ha.ausfuehren(a) { d.erledigt.append(a.name) } }
-            d.offeneFenster = await ha.offeneFenster()
+            for a in (unterwegs ? einstellungen.unterwegsAktionen : einstellungen.nacht) { if await ha.ausfuehren(a) { d.erledigt.append(a.name) } }
+            if !unterwegs { d.offeneFenster = await ha.offeneFenster() }
+            if unterwegs && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(nil) }
         }
         if !vorschau { termine = kalender.termine(von: Zeit.kalender.startOfDay(for: Date()), tage: 3) }
         d.wecker = naechsterWecker
@@ -378,6 +423,8 @@ final class Kern {
                 d.set(Date().timeIntervalSince1970, forKey: "aufgabenGeladen")
             } catch { aufgabenFehler = error.localizedDescription }
         }
+        if e.mitteilungen { Melder.pruefen(stoerungen: e.stoerungen ? stoerungen : nil, aufgaben: e.aufgaben ? aufgaben : nil) }
+        await untisLaden(erzwingen: erzwingen)
     }
 
     /// Edupool verbinden: Code holen, Freigabeseite öffnen, dann abholen (bis bestätigt oder abgelaufen)
@@ -420,7 +467,7 @@ final class Kern {
         let text = await Wecker.stellen(w.datum)
         weckerText = text
         if !still { meldung = text }
-        if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(w.datum) }
+        if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(unterwegs ? nil : w.datum) }
     }
 
     /// Widget ohne App-Gruppe: Einstellungen und Token per kurzer Live-Aktivität übergeben (einmal je Änderung)
@@ -480,6 +527,6 @@ func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T
 
 /// Bereiche, die das Widget direkt öffnet
 enum Bereich: String, Identifiable, Hashable {
-    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben
+    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan
     var id: String { rawValue }
 }

@@ -27,6 +27,8 @@ public struct BriefingDaten: Sendable {
     public var anfahrt = ""
     /// Mit dem Auto unterwegs (für „Scheibe kratzen“)
     public var auto = false
+    /// Nicht zu Hause (Gute Nacht: Unterwegs-Aktionen statt Licht aus)
+    public var unterwegs = false
     public init() {}
 }
 
@@ -96,6 +98,7 @@ public enum Briefing {
     /// Gute Nacht: was erledigt ist, offene Fenster, Wecker und Wetter für morgen
     public static func nacht(_ d: BriefingDaten) -> String {
         var s: [String] = []
+        if d.unterwegs { s.append("Du bist nicht zu Hause – das Licht bleibt, wie es ist.") }
         if !d.erledigt.isEmpty { s.append(aufzaehlen(d.erledigt) + " – erledigt.") }
         for f in d.offeneFenster.prefix(4) { s.append("Achtung: \(f) ist offen.") }
         if let w = d.wecker {

@@ -34,12 +34,29 @@ struct HauptAnsicht: View {
             .tint(kern.farbton.akzent)
             .refreshable { await kern.aktualisieren() }
             .toolbar {
+                // Menü (drei Striche): alle Bereiche als eigene Seiten
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button { pfad = [.stundenplan] } label: { Label("Stundenplan", systemImage: "calendar.day.timeline.left") }
+                        Button { pfad = [.vertretung] } label: { Label("Vertretung", systemImage: "arrow.triangle.swap") }
+                        Button { pfad = [.mensa] } label: { Label("Speiseplan", systemImage: "fork.knife") }
+                        Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") }
+                        Divider()
+                        Button { pfad = [.stoerungen] } label: { Label("Störungen", systemImage: "wrench.and.screwdriver.fill") }
+                        Button { pfad = [.aufgaben] } label: { Label("Aufgaben", systemImage: "checklist") }
+                        Button { pfad = [.abwesend] } label: { Label("Abwesenheiten", systemImage: "person.crop.circle.badge.xmark") }
+                        Divider()
+                        Button { kern.einstellungenOffen = true } label: { Label("Einstellungen", systemImage: "gearshape") }
+                    } label: { Label("Menü", systemImage: "line.3.horizontal") }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { kern.einstellungenOffen = true } label: { Label("Einstellungen", systemImage: "gearshape") }
                 }
             }
             .navigationDestination(for: Bereich.self) { b in
                 switch b {
+                case .stundenplan: StundenplanWoche(kern: kern)
+                case .post: PostAnsicht(kern: kern)
                 case .mensa: MensaAnsicht(kern: kern)
                 case .abwesend: AbwesendAnsicht(kern: kern)
                 case .stoerungen: StoerungenAnsicht(kern: kern)
@@ -74,7 +91,7 @@ struct HauptAnsicht: View {
         // Sprung aus dem Widget: Speiseplan oder Vertretung gleich öffnen
         .onChange(of: kern.bereich) { _, b in
             guard let b else { return }
-            if [.mensa, .vertretung, .abwesend, .stoerungen, .aufgaben].contains(b) { pfad = [b] } else { pfad = [] }
+            if [.mensa, .vertretung, .abwesend, .stoerungen, .aufgaben, .stundenplan, .post].contains(b) { pfad = [b] } else { pfad = [] }
             kern.bereich = nil
         }
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
@@ -357,6 +374,7 @@ struct EinstellungenAnsicht: View {
     @Bindable var kern: Kern
     @Environment(\.dismiss) private var schliessen
     @State private var haeuserText = ""
+    @State private var scannen = false
     @Environment(\.openURL) private var oeffneURL
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
@@ -445,6 +463,50 @@ struct EinstellungenAnsicht: View {
                 Toggle("5 Minuten vor einer Hofaufsicht erinnern", isOn: $k.einstellungen.aufsichtErinnern)
                 Toggle("Live-Aktivität im Schulalltag", isOn: $k.einstellungen.schulAktivitaet)
             } header: { Text("Schultag") } footer: { Text("Deine Stunden stehen im Briefing, im Widget „Schultag“ und – als Live-Aktivität – auf dem Sperrbildschirm, in der Dynamic Island und auf der Apple Watch: was gerade läuft, wie lange noch, was danach kommt. Vertretungen und Aufsichten aus dem Vertretungsplan kommen von selbst dazu.") }
+
+            Section {
+                Toggle("WebUntis verbinden", isOn: $k.einstellungen.untisAn)
+                if kern.einstellungen.untisAn {
+                    if QRScanner.verfuegbar { Button { scannen = true } label: { Label("QR-Code „Untis Mobile“ scannen", systemImage: "qrcode.viewfinder") } }
+                    TextField("Adresse der Anmeldeseite oder untis://…", text: $k.einstellungen.untisLink).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    TextField("Benutzername", text: $k.einstellungen.untisBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("Schlüssel aus „Untis Mobile“ (bei zweitem Faktor)", text: $k.untisSchluessel)
+                    SecureField("Passwort (nur ohne zweiten Faktor)", text: $k.untisPasswort)
+                    Toggle("Als „Mein Stundenplan“ übernehmen", isOn: $k.einstellungen.untisUebernehmen)
+                    Button("Jetzt laden") { Task { await kern.untisLaden(erzwingen: true); kern.meldung = kern.untisFehler.isEmpty ? "Stundenplan aus WebUntis geladen" : kern.untisFehler } }
+                    if !kern.untisFehler.isEmpty { Text(kern.untisFehler).font(.footnote).foregroundStyle(.orange) }
+                }
+            } header: { Text("WebUntis") } footer: { Text("Mit zweitem Faktor: in WebUntis am Computer auf deinen Namen → Freigaben → „Untis Mobile“ → Anzeigen. Den QR-Code hier scannen – dann meldet sich die App wie die Untis-App an und braucht dein Passwort nicht. Ohne zweiten Faktor reichen Adresse, Benutzer und Passwort. Geladen werden deine Stunden und die Pläne deiner Klassen (für „wer ist noch in der Klasse“).") }
+            .sheet(isPresented: $scannen) {
+                QRScanner { text in
+                    scannen = false
+                    if let q = Untis.qr(text) {
+                        k.einstellungen.untisLink = text.components(separatedBy: "&key=").first ?? text
+                        k.einstellungen.untisBenutzer = q.benutzer
+                        k.untisSchluessel = q.schluessel
+                        k.einstellungen.untisAn = true
+                        Task { await kern.untisLaden(erzwingen: true); kern.meldung = kern.untisFehler.isEmpty ? "WebUntis verbunden" : kern.untisFehler }
+                    } else { kern.meldung = "Das ist kein „Untis Mobile“-QR-Code." }
+                }
+                .ignoresSafeArea()
+            }
+
+            Section {
+                Toggle("Unterwegs anders schlafen gehen", isOn: $k.einstellungen.unterwegsAn)
+                if kern.einstellungen.unterwegsAn {
+                    Stepper("Unterwegs ab \(kern.einstellungen.zuhauseRadius) m von Zuhause", value: $k.einstellungen.zuhauseRadius, in: 300...20000, step: 100)
+                    ForEach($k.einstellungen.unterwegsAktionen) { $a in
+                        VStack(alignment: .leading) {
+                            TextField("Name", text: $a.name)
+                            HStack { TextField("script.turn_on", text: $a.dienst); TextField("script.urlaubsmodus", text: $a.ziel) }.font(.caption).textInputAutocapitalization(.never)
+                        }
+                    }
+                    .onDelete { k.einstellungen.unterwegsAktionen.remove(atOffsets: $0) }
+                    Button("Aktion für unterwegs hinzufügen") { k.einstellungen.unterwegsAktionen.append(HAAktion(name: "Urlaubsmodus", dienst: "script.turn_on", ziel: "")) }
+                    if kern.einstellungen.zuhauseOrt == nil { Text("Bitte unten bei „Orte“ Zuhause speichern.").font(.footnote).foregroundStyle(.orange) }
+                    if kern.unterwegs { Label("Gerade unterwegs", systemImage: "car.fill").foregroundStyle(.orange) }
+                }
+            } header: { Text("Unterwegs") } footer: { Text("Bist du weiter als die eingestellte Entfernung von Zuhause weg (z. B. bei Verwandten), macht „Gute Nacht“ nicht „Alle Lichter aus“, sondern startet diese Aktionen – etwa deine Urlaubs-Automation. Die Morgenroutine zu Hause läuft dann nicht. Der Wecker klingelt wie immer.") }
 
             Section {
                 Toggle("Fahrzeit berücksichtigen", isOn: $k.einstellungen.fahrt)

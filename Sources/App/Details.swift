@@ -45,13 +45,15 @@ struct MensaAnsicht: View {
             if let p = kern.mensaPlan {
                 Section { held(p, e).listRowBackground(Color.clear).listRowSeparator(.hidden) }
                 Section { kennzahlen(p).listRowBackground(Color.clear).listRowSeparator(.hidden) }
+                // alle Wochen untereinander (wie im Kantinen-Widget), jede mit Überschrift
                 let wochen = wochen(p.tage)
-                if wochen.count > 1 {
-                    Picker("Woche", selection: $woche) { ForEach(wochen.indices, id: \.self) { Text(wochen[$0].0).tag($0) } }
-                        .pickerStyle(.segmented).listRowBackground(Color.clear).listRowSeparator(.hidden)
-                }
-                ForEach(wochen.indices.contains(woche) ? wochen[woche].1 : [], id: \.datum) { t in
-                    Section { tag(t, gut: gut, schlecht: schlecht, e: e) } header: { tagKopf(t) }
+                ForEach(wochen.indices, id: \.self) { i in
+                    if wochen.count > 1 {
+                        Text(wochen[i].0).font(.title3.weight(.bold)).padding(.top, 8).listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    }
+                    ForEach(wochen[i].1, id: \.datum) { t in
+                        Section { tag(t, gut: gut, schlecht: schlecht, e: e) } header: { tagKopf(t) }
+                    }
                 }
             } else {
                 Text(kern.mensaFehler.isEmpty ? "Noch kein Speiseplan geladen." : kern.mensaFehler).foregroundStyle(.secondary)

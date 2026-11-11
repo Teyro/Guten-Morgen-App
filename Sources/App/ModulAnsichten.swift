@@ -88,22 +88,69 @@ struct StoerungenAnsicht: View {
         .refreshable { await kern.moduleLaden(erzwingen: true) }
         .sheet(item: Binding(get: { offen.map { Kasten(m: $0) } }, set: { offen = $0?.m })) { k in
             NavigationStack {
-                List {
-                    Section { Text(k.m.inhalt.isEmpty ? "Kein weiterer Text." : k.m.inhalt) }
-                    Section {
-                        if !k.m.ort.isEmpty { LabeledContent("Ort", value: k.m.ort) }
-                        if !k.m.autor.isEmpty { LabeledContent("Gemeldet von", value: k.m.autor) }
-                        LabeledContent("Zustand", value: k.m.zustand)
-                        if let u = URL(string: k.m.url), !k.m.url.isEmpty { Link("In IServ öffnen", destination: u) }
-                    }
-                }
-                .navigationTitle(k.m.titel).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { offen = nil } } }
+                StoerungDetail(m: k.m)
+                    .background(Hintergrund(farbton: kern.farbton))
+                    .navigationTitle("Störung").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { offen = nil } } }
             }
             .presentationDetents([.medium, .large])
         }
     }
     struct Kasten: Identifiable { let m: Stoerung; var id: String { m.titel + m.url + (m.datum?.description ?? "") } }
+}
+
+/// Eine Störungsmeldung ausführlich: Zustand groß, alle Angaben, ganzer Text, Link zu IServ
+struct StoerungDetail: View {
+    let m: Stoerung
+    private var farbe: Color { m.erledigt ? .green : m.uebernommen ? .blue : .orange }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(m.zustand).font(.subheadline.weight(.bold)).padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(farbe.opacity(0.2), in: Capsule()).foregroundStyle(farbe)
+                    Text(m.titel).font(.title2.weight(.bold))
+                    if let d = m.datum {
+                        Text(d.formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.wide).day().month().hour().minute()) + " · " + d.formatted(.relative(presentation: .named)))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22, farbe: farbe)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    angabe("mappin.and.ellipse", "Ort", m.ort)
+                    angabe("person.fill", "Gemeldet von", m.autor)
+                    angabe("wrench.adjustable.fill", "Bearbeitet von", m.bearbeiter.isEmpty ? (m.unbesetzt ? "noch niemand" : "") : m.bearbeiter)
+                    angabe("flag.fill", "Status", m.status)
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Beschreibung").font(.headline)
+                    Text(m.inhalt.isEmpty ? "Kein weiterer Text." : m.inhalt).font(.body).textSelection(.enabled)
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
+
+                if let u = URL(string: m.url), !m.url.isEmpty {
+                    Link(destination: u) { Label("In IServ öffnen", systemImage: "safari").frame(maxWidth: .infinity).padding(12) }
+                        .glas(18, farbe: .blue)
+                }
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder private func angabe(_ s: String, _ t: String, _ w: String) -> some View {
+        if !w.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: s).foregroundStyle(.secondary).frame(width: 22)
+                Text(t).foregroundStyle(.secondary)
+                Spacer()
+                Text(w).multilineTextAlignment(.trailing).font(.body.weight(.medium))
+            }
+        }
+    }
 }
 
 /// Edupool-Aufgaben nach Kategorien (Ideen, Zu erledigen, In Bearbeitung, Wartet, Erledigt), mit Suche; antippen = ganzer Text

@@ -10,9 +10,20 @@ enum Melder {
             let jetzt = s.offen.map { $0.titel + "|" + ($0.datum.map { String(Int($0.timeIntervalSince1970)) } ?? "") }
             let neu = vergleiche(jetzt, schluessel: "gemeldetStoerungen", d)
             for m in s.offen where neu.contains(m.titel + "|" + (m.datum.map { String(Int($0.timeIntervalSince1970)) } ?? "")) {
-                melde(id: "stoerung-\(abs(m.titel.hashValue))", titel: "Neue Störung" + (m.ort.isEmpty ? "" : " · \(m.ort)"),
+                melde(id: "stoerung-\(stabil(m.titel))", titel: "Neue Störung" + (m.ort.isEmpty ? "" : " · \(m.ort)"),
                       text: m.titel + (m.autor.isEmpty ? "" : " (von \(m.autor))"), link: "gutenmorgen://stoerungen")
             }
+            // Zustand geändert: übernommen, anderer Bearbeiter, erledigt
+            let zustaende = Dictionary(s.meldungen.map { ($0.titel + "|" + ($0.datum.map { String(Int($0.timeIntervalSince1970)) } ?? ""), $0.zustand) }, uniquingKeysWith: { a, _ in a })
+            if let alt = d.dictionary(forKey: "zustandStoerungen") as? [String: String] {
+                for m in s.meldungen {
+                    let k = m.titel + "|" + (m.datum.map { String(Int($0.timeIntervalSince1970)) } ?? "")
+                    guard let vorher = alt[k], vorher != m.zustand else { continue }
+                    melde(id: "stoerung-\(stabil(k + m.zustand))", titel: m.erledigt ? "Störung erledigt" : "Störung: \(m.zustand)",
+                          text: m.titel + (m.ort.isEmpty ? "" : " · \(m.ort)"), link: "gutenmorgen://stoerungen")
+                }
+            }
+            d.set(zustaende, forKey: "zustandStoerungen")
         }
         if let a = aufgaben {
             let jetzt = a.aufgaben.map { "\($0.id)|\($0.kategorie)" }
@@ -31,6 +42,9 @@ enum Melder {
         guard let alt else { return [] }
         return Set(jetzt).subtracting(alt)
     }
+
+    /// Gleiche Eingabe → gleiche Zahl in App und Widget (hashValue ist je Prozess anders) – gleiche Mitteilung ersetzt sich
+    private static func stabil(_ s: String) -> UInt64 { s.utf8.reduce(5381) { ($0 << 5) &+ $0 &+ UInt64($1) } }
 
     private static func melde(id: String, titel: String, text: String, link: String) {
         let c = UNMutableNotificationContent()

@@ -111,6 +111,17 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var glaetteFrueher = 15
     /// Morgenroutine in Home Assistant (läuft dort als Automation, gesteuert über die Weckzeit)
     public var routine: [RoutinenSchritt] = []
+    /// WebUntis: eigener Plan, Klassen-Übersicht (Passwort im Schlüsselbund)
+    public var untisAn = false
+    public var untisLink = ""
+    public var untisBenutzer = ""
+    /// Grundwoche aus WebUntis als „Mein Stundenplan“ übernehmen
+    public var untisUebernehmen = true
+    /// Unterwegs (nicht zu Hause, z. B. bei Verwandten): bei „Gute Nacht“ diese Aktionen statt der normalen, keine Morgenroutine
+    public var unterwegsAn = false
+    public var unterwegsAktionen: [HAAktion] = []
+    /// Ab dieser Entfernung von „Zuhause“ gilt man als unterwegs (Meter)
+    public var zuhauseRadius = 1500
 
     public init() {}
 
@@ -120,7 +131,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
              mitteilungen, schulOrt, zuhauseOrt,
-             schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine
+             schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
+             untisAn, untisLink, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -153,6 +165,15 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         aufsichtErinnern = w(.aufsichtErinnern, s.aufsichtErinnern); schulAktivitaet = w(.schulAktivitaet, s.schulAktivitaet)
         fahrt = w(.fahrt, s.fahrt); fahrtArt = w(.fahrtArt, s.fahrtArt); fertig = w(.fertig, s.fertig); puffer = w(.puffer, s.puffer)
         glaetteFrueher = w(.glaetteFrueher, s.glaetteFrueher); routine = w(.routine, s.routine)
+        untisAn = w(.untisAn, s.untisAn); untisLink = w(.untisLink, s.untisLink); untisBenutzer = w(.untisBenutzer, s.untisBenutzer)
+        untisUebernehmen = w(.untisUebernehmen, s.untisUebernehmen); unterwegsAn = w(.unterwegsAn, s.unterwegsAn)
+        unterwegsAktionen = w(.unterwegsAktionen, s.unterwegsAktionen); zuhauseRadius = w(.zuhauseRadius, s.zuhauseRadius)
+    }
+
+    /// Unterwegs? (nur mit Schalter und gespeichertem Zuhause; ohne Standort: nein)
+    public func unterwegs(hier: Kontext.Ort?) -> Bool {
+        guard unterwegsAn, let z = zuhauseOrt, let h = hier else { return false }
+        return z.abstand(h) > Double(zuhauseRadius)
     }
 
     /// Der eigene Tagesablauf (Stunden, Vertretung, Aufsichten)
