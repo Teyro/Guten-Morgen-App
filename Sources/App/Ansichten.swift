@@ -250,6 +250,13 @@ struct SchuleKarte: View {
     var body: some View {
         let e = kern.einstellungen
         Karte(symbol: "graduationcap.fill", farbe: .purple, titel: "Schule " + kern.schulTagName) {
+            if !kern.anfahrtText.isEmpty {
+                Label(kern.anfahrtText, systemImage: e.fahrtArt == "oepnv" ? "tram.fill" : e.fahrtArt == "fuss" ? "figure.walk" : "car.fill").font(.callout.weight(.medium))
+            }
+            // eigene Stunden (Vertretungen und Aufsichten stehen darunter beim Vertretungsplan)
+            ForEach(kern.schultag.filter { $0.art == .unterricht }, id: \.von) { b in
+                Zeile(marke: b.marke, farbe: .blue, titel: b.text, unter: "\(b.von.formatted(date: .omitted, time: .shortened))–\(b.bis.formatted(date: .omitted, time: .shortened))")
+            }
             if e.vertretung && !e.vertretungLink.isEmpty {
                 Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e) } }.buttonStyle(.plain)
             }
@@ -388,6 +395,8 @@ struct EinstellungenAnsicht: View {
                 Toggle("In den Ferien kein Wecker", isOn: $k.einstellungen.ferienFrei)
                 Toggle("An Feiertagen kein Wecker", isOn: $k.einstellungen.feiertagFrei)
                 Toggle("Wecker automatisch stellen", isOn: $k.einstellungen.weckerAutomatisch)
+                Stepper(kern.einstellungen.glaetteFrueher == 0 ? "Bei Glätte/Schnee: nicht früher" : "Bei Glätte/Schnee: \(kern.einstellungen.glaetteFrueher) min früher",
+                        value: $k.einstellungen.glaetteFrueher, in: 0...60, step: 5)
                 Picker("Bundesland", selection: $k.einstellungen.bundesland) {
                     ForEach(["BW", "BY", "BE", "BB", "HB", "HH", "HE", "MV", "NI", "NW", "RP", "SL", "SN", "ST", "SH", "TH"], id: \.self) { Text($0) }
                 }
@@ -426,6 +435,56 @@ struct EinstellungenAnsicht: View {
                         .onChange(of: haeuserText) { _, neu in k.einstellungen.haeuser = Vertretung.haeuser(text: neu) }
                 }
             } header: { Text("Vertretung") } footer: { Text("Cloud-Ordner mit dem Vertretungsplan (Word-Dateien). Gelesen wird nur, was für dein Kürzel drinsteht – Stunden, Hofaufsicht und Hinweise. Häuser je Zeile, z. B. „Haus 1: 1a, 1b, 2a“: dann steht dabei, wohin du musst.") }
+
+            Section {
+                NavigationLink {
+                    StundenplanAnsicht(kern: kern)
+                } label: {
+                    LabeledContent("Mein Stundenplan", value: kern.einstellungen.unterricht.isEmpty ? "leer" : "\(kern.einstellungen.unterricht.count) Stunden")
+                }
+                Toggle("5 Minuten vor einer Hofaufsicht erinnern", isOn: $k.einstellungen.aufsichtErinnern)
+                Toggle("Live-Aktivität im Schulalltag", isOn: $k.einstellungen.schulAktivitaet)
+            } header: { Text("Schultag") } footer: { Text("Deine Stunden stehen im Briefing, im Widget „Schultag“ und – als Live-Aktivität – auf dem Sperrbildschirm, in der Dynamic Island und auf der Apple Watch: was gerade läuft, wie lange noch, was danach kommt. Vertretungen und Aufsichten aus dem Vertretungsplan kommen von selbst dazu.") }
+
+            Section {
+                Toggle("Fahrzeit berücksichtigen", isOn: $k.einstellungen.fahrt)
+                if kern.einstellungen.fahrt {
+                    Picker("Unterwegs", selection: $k.einstellungen.fahrtArt) {
+                        Text("Auto").tag("auto"); Text("Bus und Bahn").tag("oepnv"); Text("zu Fuß").tag("fuss")
+                    }
+                    Stepper("Fertigmachen: \(kern.einstellungen.fertig) min", value: $k.einstellungen.fertig, in: 10...120, step: 5)
+                    Stepper("Vor der ersten Stunde da: \(kern.einstellungen.puffer) min", value: $k.einstellungen.puffer, in: 0...60, step: 5)
+                    if kern.einstellungen.schulOrt == nil { Text("Bitte unten bei „Orte“ die Schule speichern.").font(.footnote).foregroundStyle(.orange) }
+                    if let f = kern.fahrt { LabeledContent("Zuletzt berechnet", value: "\(f.minuten) min") }
+                }
+            } header: { Text("Anfahrt") } footer: { Text("Rechnet über Apple Karten, wie lange du zur ersten Stunde brauchst (Auto mit Verkehrsprognose, Bus und Bahn nach Fahrplan). Wird es mit der normalen Weckzeit knapp, klingelt der Wecker früher; morgens sagt das Briefing, wann du losfahren musst. Start ist „Zuhause“ (sonst der aktuelle Ort).") }
+
+            Section {
+                ForEach($k.einstellungen.routine) { $s in
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Name, z. B. Bad heizen", text: $s.name)
+                        HStack { TextField("script.turn_on", text: $s.dienst); TextField("script.bad_heizen", text: $s.ziel) }.font(.caption).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Stepper(s.minuten < 0 ? "\(-s.minuten) min vor dem Wecker" : s.minuten == 0 ? "beim Wecken" : "\(s.minuten) min nach dem Wecker", value: $s.minuten, in: -120...60, step: 5)
+                        if s.dienst == "light.turn_on" {
+                            Stepper(s.langsam == 0 ? "Licht sofort an" : "Licht langsam heller: \(s.langsam / 60) min", value: $s.langsam, in: 0...1800, step: 60)
+                        }
+                    }
+                }
+                .onDelete { k.einstellungen.routine.remove(atOffsets: $0) }
+                Button("Schritt hinzufügen") { k.einstellungen.routine.append(RoutinenSchritt(name: "Bad heizen", dienst: "script.turn_on", ziel: "", minuten: -20)) }
+                Button("Licht langsam an (Vorlage)") { k.einstellungen.routine.append(RoutinenSchritt(name: "Licht langsam an", dienst: "light.turn_on", ziel: "light.schlafzimmer", minuten: -10, langsam: 600)) }
+                Button(kern.einstellungen.routine.isEmpty ? "Morgenroutine aus Home Assistant entfernen" : "In Home Assistant einrichten") { Task { await kern.routineEinrichten() } }
+                if !kern.routineMeldung.isEmpty { Text(kern.routineMeldung).font(.footnote).foregroundStyle(.secondary) }
+            } header: { Text("Morgenroutine (Home Assistant)") } footer: { Text("Die App legt in Home Assistant die Automation „Guten Morgen – Morgenroutine“ an und meldet die Weckzeit als sensor.guten_morgen_wecker. Home Assistant führt die Schritte dann selbst aus – auch wenn das iPhone schläft. Nach Änderungen hier noch einmal „einrichten“ tippen. Braucht einen Zugang mit Admin-Rechten.") }
+
+            Section {
+                Text("1. iPhone-Einstellungen → Fokus → „+“ → Eigener Fokus „Schule“.\n2. Dort „Zeitplan hinzufügen“ → Ort → Schule: dann schaltet iOS den Fokus an, sobald du dort bist.\n3. Unten bei „Fokus-Filter“ → Guten Morgen → „Schul-Infos zuerst“ einschalten.").font(.footnote)
+                Button("iPhone-Einstellungen öffnen") { if let u = URL(string: UIApplication.openSettingsURLString) { oeffneURL(u) } }
+            } header: { Text("Fokus „Schule“") } footer: { Text("Den Fokus selbst darf eine App nicht einschalten – iOS macht das aber zuverlässig nach Ort. Guten Morgen zeigt im Fokus die Schul-Infos zuerst.") }
+
+            Section {
+                Text("Die Apple-Watch-App steckt in der Datei „GutenMorgen-iOS-mit-Uhr“ im Release. Damit installiert, erscheint sie auf der Uhr (Watch-App auf dem iPhone → Verfügbare Apps). Sie zeigt Wecker, was gerade läuft und den Tagesablauf. Die Live-Aktivität erscheint außerdem im Smart Stack der Uhr, und der Wecker klingelt auch dort.").font(.footnote)
+            } header: { Text("Apple Watch") }
 
             Section {
                 Toggle("Speiseplan zeigen", isOn: $k.einstellungen.mensa)

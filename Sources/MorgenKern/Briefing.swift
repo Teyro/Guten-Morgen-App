@@ -21,6 +21,12 @@ public struct BriefingDaten: Sendable {
     public var wecker: Weckzeit?
     public var offeneFenster: [String] = []
     public var erledigt: [String] = []
+    /// Eigener Tagesablauf des Schultags (leer = kein Stundenplan eingetragen)
+    public var schultag: [Block] = []
+    /// „Losfahren um 7 Uhr 12, 23 Minuten mit dem Auto.“
+    public var anfahrt = ""
+    /// Mit dem Auto unterwegs (für „Scheibe kratzen“)
+    public var auto = false
     public init() {}
 }
 
@@ -46,7 +52,14 @@ public enum Briefing {
             let m = Int(z / 60)
             s.append("Du hast \(m / 60) Stunden\(m % 60 > 0 ? " und \(m % 60) Minuten" : "") geschlafen.")
         }
-        if let w = d.wetter { s.append(w.satz()) }
+        if let w = d.wetter {
+            s.append(w.satz())
+            if let t = w.heute {
+                let h = Wetter.hinweise(t, auto: d.auto).filter { $0 != "Vorsicht, glatt" }
+                if !h.isEmpty { s.append(aufzaehlen(h) + ".") }
+            }
+        }
+        if !d.anfahrt.isEmpty { s.append(d.anfahrt) }
         let heute = d.termine.filter { k.isDate($0.start, inSameDayAs: d.jetzt) }
         let ganz = heute.filter(\.ganztags).map(\.titel)
         let zeit = heute.filter { !$0.ganztags && $0.start > d.jetzt.addingTimeInterval(-1800) }.sorted { $0.start < $1.start }
@@ -64,7 +77,11 @@ public enum Briefing {
         let schultag = schuleHeute ? d.frei == nil && (2...6).contains(k.component(.weekday, from: d.jetzt)) : true
         let wann = schuleHeute ? "" : (k.isDate(tag, inSameDayAs: k.date(byAdding: .day, value: 1, to: d.jetzt) ?? d.jetzt) ? "Morgen" : "Am " + Zeit.wochentag(tag))
         var schule: [String] = []
-        if let v = d.vertretung, schultag, v.datum == nil || v.datum == Zeit.iso(tag) { schule.append(v.satz(haeuser: d.haeuser)) }
+        if schultag && !d.schultag.isEmpty {
+            // Stundenplan enthält Vertretungen und Aufsichten schon – nur „fehlend“/„außer Haus“ extra
+            if let v = d.vertretung, v.fehlt || v.ausserHaus { schule.append(v.fehlt ? "Du bist als fehlend eingetragen." : "Du bist außer Haus eingetragen.") }
+            schule.append(Stundenplan.satz(d.schultag))
+        } else if let v = d.vertretung, schultag, v.datum == nil || v.datum == Zeit.iso(tag) { schule.append(v.satz(haeuser: d.haeuser)) }
         if schultag && d.obst { schule.append(schuleHeute ? "Heute kommt Schulobst." : "Es kommt Schulobst.") }
         if let m = d.mensa, schultag, m.datum == Zeit.iso(tag) {
             var mm = m

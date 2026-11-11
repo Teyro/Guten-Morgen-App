@@ -19,7 +19,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 @main
 struct GutenMorgenApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var kern = Kern()
+    @State private var kern: Kern
+
+    init() {
+        let k = Kern()
+        _kern = State(initialValue: k)
+        // Hintergrund-Lauf muss vor dem Ende des Starts angemeldet sein
+        if !k.vorschau { Hintergrund.anmelden(k) }
+    }
     var body: some Scene {
         WindowGroup {
             HauptAnsicht(kern: kern)
@@ -36,7 +43,11 @@ struct GutenMorgenApp: App {
                     default: break
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .fokusGeaendert)) { _ in
+                    Task { kern.kontext = await SchulFokusFilter.schuleAktiv() ? .schule : Kontext.bestimme(frei: kern.frei, hier: kern.ortung.ort, schule: kern.einstellungen.schulOrt, zuhause: kern.einstellungen.zuhauseOrt) }
+                }
                 .onAppear {
+                    if !kern.vorschau { Uhr.shared.starten(kern) }
                     AppDelegate.oeffnen = { u in kern.bereich = Bereich(rawValue: u.host ?? "") }
                     if kern.vorschau, ProcessInfo.processInfo.environment["GM_ANSICHT"] == "einstellungen" { kern.einstellungenOffen = true }
                 }

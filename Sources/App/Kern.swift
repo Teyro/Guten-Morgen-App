@@ -52,6 +52,9 @@ final class Kern {
     var mensaPlan: MensaPlan?
     var mensaFehler = ""
     var obstTage: Set<String> = []
+    /// Fahrzeit zur Schule für einen Schultag (Apple Karten), gemerkt bis zum nächsten Laden
+    var fahrt: (tag: Date, minuten: Int)?
+    var routineMeldung = ""
     var schlaf: TimeInterval?
     var laedt = false
     /// Sprungziel aus dem Widget (gutenmorgen://mensa …)
@@ -109,10 +112,68 @@ final class Kern {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    /// Der nächste Wecktag und seine Weckzeit
+    /// Der nächste Wecktag und seine Weckzeit (mit Glätte und Anfahrt)
     var naechsterWecker: Weckzeit {
         let tag = Weckzeit.naechsterTag()
-        return Weckzeit.berechne(tag: tag, termine: termine, frei: FreieTage.am(frei, tag), e: einstellungen)
+        let k = Zeit.kalender
+        let wetterTag = k.isDateInToday(tag) ? wetter?.heute : wetter?.morgen
+        let f = fahrt.flatMap { k.isDate($0.tag, inSameDayAs: tag) ? $0.minuten : nil }
+        return einstellungen.wecker(tag: tag, termine: termine, frei: FreieTage.am(frei, tag), wetter: wetterTag, vertretung: vertretung, fahrtMinuten: f)
+    }
+
+    /// Eigener Tagesablauf des Schultags (heute, ab 16 Uhr der nächste) und von heute
+    var schultag: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung) }
+    var heuteBloecke: [Block] { freiHeute == nil ? einstellungen.schultag(Date(), vertretung: vertretung) : [] }
+
+    /// „Losfahren um 7 Uhr 12, 23 Minuten mit dem Auto.“ – nur am Morgen des Schultags
+    var anfahrtText: String {
+        guard einstellungen.fahrt, let f = fahrt, Zeit.kalender.isDateInToday(f.tag), let b = Stundenplan.beginn(heuteBloecke), b > Date() else { return "" }
+        let k = Zeit.kalender
+        let los = Anfahrt.losfahren(beginn: k.component(.hour, from: b) * 60 + k.component(.minute, from: b), fahrtMinuten: f.minuten, puffer: einstellungen.puffer)
+        let art = einstellungen.fahrtArt == "oepnv" ? "mit Bus und Bahn" : einstellungen.fahrtArt == "fuss" ? "zu Fuß" : "mit dem Auto"
+        return "Losfahren um \(Zeit.sprechen(los)), \(f.minuten) Minuten \(art)."
+    }
+
+    /// Fahrzeit für den nächsten Schulbeginn: heute (falls noch vor der ersten Stunde), sonst der nächste Wecktag
+    func anfahrtBerechnen() async {
+        let e = einstellungen
+        guard e.fahrt, let schule = e.schulOrt else { fahrt = nil; return }
+        let k = Zeit.kalender
+        var tag = Date()
+        var beginn = Stundenplan.beginn(heuteBloecke)
+        if beginn == nil || beginn! <= Date() {
+            tag = Weckzeit.naechsterTag()
+            beginn = FreieTage.am(frei, tag) == nil ? Stundenplan.beginn(e.schultag(tag, vertretung: vertretung)) : nil
+        }
+        guard let b = beginn, let von = e.zuhauseOrt ?? ortung.ort else { return }
+        if let m = await Fahrt.minuten(von: von, nach: schule, art: e.fahrtArt, ankunft: b.addingTimeInterval(-Double(e.puffer * 60))) {
+            fahrt = (tag: k.startOfDay(for: tag), minuten: m)
+        }
+    }
+
+    /// Nach dem Laden: Aufsicht-Erinnerungen, Live-Aktivität, Weckzeit an Home Assistant, Hintergrund-Lauf, Apple Watch
+    func nachAussen() async {
+        guard !vorschau else { return }
+        let heute = heuteBloecke
+        await AufsichtErinnerung.planen(schultag, an: einstellungen.aufsichtErinnern)
+        await Schulalltag.aktualisieren(heute, an: einstellungen.schulAktivitaet)
+        if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(Wecker.gestellt ?? naechsterWecker.datum) }
+        Hintergrund.planen(wecker: naechsterWecker.datum, bloecke: heute)
+        Uhr.shared.senden(self)
+    }
+
+    /// Morgenroutine als Automation in Home Assistant anlegen (leer = löschen)
+    func routineEinrichten() async {
+        guard ha.eingerichtet else { routineMeldung = "Erst Home Assistant verbinden."; return }
+        do {
+            try await ha.routineEinrichten(einstellungen.routine)
+            if !einstellungen.routine.isEmpty { await ha.weckzeitMelden(Wecker.gestellt ?? naechsterWecker.datum) }
+            routineMeldung = einstellungen.routine.isEmpty ? "Morgenroutine in Home Assistant entfernt." : "Morgenroutine in Home Assistant eingerichtet (Automation „Guten Morgen – Morgenroutine“)."
+        } catch {
+            routineMeldung = (error as? URLError)?.code == .userAuthenticationRequired
+                ? "Home Assistant lehnt ab – der Zugang braucht Admin-Rechte, um Automationen anzulegen."
+                : "Einrichten hat nicht geklappt: \(error.localizedDescription)"
+        }
     }
 
     var freiHeute: FreierTag? { FreieTage.am(frei, Date()) }
@@ -162,8 +223,11 @@ final class Kern {
         schlaf = await s
         if e.schulOrt != nil || e.zuhauseOrt != nil { _ = await ortung.einmal() }
         kontext = Kontext.bestimme(frei: frei, hier: ortung.ort, schule: e.schulOrt, zuhause: e.zuhauseOrt)
+        if await SchulFokusFilter.schuleAktiv() { kontext = .schule }
         await moduleLaden()
+        await anfahrtBerechnen()
         if e.weckerAutomatisch && Wecker.verfuegbar { await weckerStellen(still: true) }
+        await nachAussen()
         await widgetUebergeben()
     }
 
@@ -177,6 +241,9 @@ final class Kern {
         d.schulTag = schulTag; d.schlaf = schlaf
         d.mensaWahl = (einstellungen.favoriten, einstellungen.meiden)
         d.gemerkt = (einstellungen.lieblingsGerichte, einstellungen.nichtLecker)
+        d.schultag = schultag
+        d.anfahrt = anfahrtText
+        d.auto = einstellungen.fahrt && einstellungen.fahrtArt == "auto"
         return Briefing.morgen(d)
     }
 
@@ -353,6 +420,7 @@ final class Kern {
         let text = await Wecker.stellen(w.datum)
         weckerText = text
         if !still { meldung = text }
+        if ha.eingerichtet && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(w.datum) }
     }
 
     /// Widget ohne App-Gruppe: Einstellungen und Token per kurzer Live-Aktivität übergeben (einmal je Änderung)
@@ -396,6 +464,7 @@ final class Kern {
         vertretung = p
         einstellungen.haeuser = ["Haus 2": ["2a", "2b", "2c"]]
         einstellungen.mensa = true; einstellungen.obst = true
+        einstellungen.unterricht = (2...6).flatMap { t in [Unterricht(tag: t, stunde: "1", klasse: "5a", fach: "Mathe", raum: "R12"), Unterricht(tag: t, stunde: "4", klasse: "6b", fach: "Deutsch", raum: "R7")] }
         einstellungen.vertretungLink = "https://cloud.example.de/s/Beispiel"; einstellungen.obstKalender = "https://example.de/obst.ics"
         mensaPlan = MensaPlan(tage: [MensaTag(datum: Zeit.iso(schulTag), gerichte: [Gericht(menue: "Menü 1", text: "Spaghetti Bolognese", bestellt: true), Gericht(menue: "Menü 2", text: "Gemüsecurry mit Reis")])], guthaben: 23.4)
         obstTage = [Zeit.iso(schulTag)]

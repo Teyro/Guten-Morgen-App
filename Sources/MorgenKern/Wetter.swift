@@ -62,6 +62,25 @@ public struct Wetter: Codable, Hashable, Sendable {
                       heute: tag(0), morgen: tag(1), stand: jetzt)
     }
 
+    /// Schnee oder Schneegriesel
+    public static func schnee(_ t: WetterTag) -> Bool { (71...77).contains(t.code) || t.code == 85 || t.code == 86 }
+
+    /// Glatt: gefrierender Regen/Niesel, Schnee, oder Frost mit Niederschlag
+    public static func glaette(_ t: WetterTag) -> Bool {
+        [56, 57, 66, 67].contains(t.code) || schnee(t) || (t.min <= 0.5 && t.regen >= 40)
+    }
+
+    /// Kurze Hinweise: „Schirm mitnehmen“, „Scheibe kratzen“ …
+    public static func hinweise(_ t: WetterTag, auto: Bool) -> [String] {
+        var h: [String] = []
+        if glaette(t) { h.append("Vorsicht, glatt") }
+        if t.regen >= 50 && !schnee(t) { h.append("Schirm mitnehmen") }
+        if auto && t.min <= 0 { h.append("Scheibe kratzen") }
+        if t.max <= 3 { h.append("Warm anziehen") }
+        if t.wind >= 50 { h.append("Sturm") }
+        return h
+    }
+
     /// „Draußen 4 Grad, bedeckt. Heute 2 bis 7 Grad, Regen wahrscheinlich (70 %).“
     public func satz(morgen istMorgen: Bool = false) -> String {
         guard let t = istMorgen ? morgen : heute else { return "" }

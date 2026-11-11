@@ -11,8 +11,10 @@ import ActivityKit
 struct MorgenWidgets: WidgetBundle {
     var body: some Widget {
         MorgenWidget()
+        SchultagWidget()
         #if os(iOS)
         UebergabeWidget()
+        SchulTagLiveWidget()
         #endif
     }
 }

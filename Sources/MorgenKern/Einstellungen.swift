@@ -9,6 +9,21 @@ public struct HAAktion: Codable, Hashable, Identifiable, Sendable {
     public init(name: String, dienst: String, ziel: String) { self.name = name; self.dienst = dienst; self.ziel = ziel }
 }
 
+/// Ein Schritt der Morgenroutine in Home Assistant, z. B. „Heizung Bad“ 20 Minuten vor dem Wecken
+public struct RoutinenSchritt: Codable, Hashable, Identifiable, Sendable {
+    public var id = UUID()
+    public var name: String
+    public var dienst: String   // "climate.set_temperature", "light.turn_on", "script.turn_on"
+    public var ziel: String     // entity_id
+    /// Minuten relativ zum Wecker: −20 = 20 Minuten vorher, 0 = beim Wecken, 5 = danach
+    public var minuten: Int
+    /// Licht langsam heller werden lassen: Sekunden (0 = sofort) – nur bei light.turn_on
+    public var langsam: Int = 0
+    public init(name: String, dienst: String, ziel: String, minuten: Int, langsam: Int = 0) {
+        self.name = name; self.dienst = dienst; self.ziel = ziel; self.minuten = minuten; self.langsam = langsam
+    }
+}
+
 /// Alle Einstellungen (ohne Token – der liegt im Schlüsselbund bzw. wird dem Widget übergeben)
 public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     /// Weckzeit je Wochentag (1 = Sonntag … 7 = Samstag wie Calendar.weekday), "" = kein Wecker
@@ -77,6 +92,25 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var meinTagSkript = "Mein-Tag"
     /// Schlaf aus Apple Health zeigen und den Nachtmodus als Schlaf eintragen
     public var gesundheit = false
+    /// Eigener Stundenplan: Klingelzeiten der Schule und die eigenen Stunden
+    public var schulzeiten: [Schulzeit] = Schulzeit.standard
+    public var unterricht: [Unterricht] = []
+    /// Mitteilung 5 Minuten vor einer Hofaufsicht
+    public var aufsichtErinnern = true
+    /// Live-Aktivität im Schulalltag (Sperrbildschirm, Dynamic Island, Apple Watch)
+    public var schulAktivitaet = true
+    /// Anfahrt: Fahrzeit über Apple Karten, früher wecken, wenn es sonst knapp wird
+    public var fahrt = false
+    /// "auto", "oepnv", "fuss"
+    public var fahrtArt = "auto"
+    /// Minuten vom Wecken bis zum Losfahren
+    public var fertig = 45
+    /// so viele Minuten vor der ersten Stunde da sein
+    public var puffer = 10
+    /// Bei Glätte oder Schnee so viele Minuten früher wecken (0 = aus)
+    public var glaetteFrueher = 15
+    /// Morgenroutine in Home Assistant (läuft dort als Automation, gesteuert über die Weckzeit)
+    public var routine: [RoutinenSchritt] = []
 
     public init() {}
 
@@ -85,7 +119,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
-             mitteilungen, schulOrt, zuhauseOrt
+             mitteilungen, schulOrt, zuhauseOrt,
+             schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -114,6 +149,28 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         mitteilungen = w(.mitteilungen, s.mitteilungen)
         schulOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .schulOrt)) ?? nil
         zuhauseOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .zuhauseOrt)) ?? nil
+        schulzeiten = w(.schulzeiten, s.schulzeiten); unterricht = w(.unterricht, s.unterricht)
+        aufsichtErinnern = w(.aufsichtErinnern, s.aufsichtErinnern); schulAktivitaet = w(.schulAktivitaet, s.schulAktivitaet)
+        fahrt = w(.fahrt, s.fahrt); fahrtArt = w(.fahrtArt, s.fahrtArt); fertig = w(.fertig, s.fertig); puffer = w(.puffer, s.puffer)
+        glaetteFrueher = w(.glaetteFrueher, s.glaetteFrueher); routine = w(.routine, s.routine)
+    }
+
+    /// Der eigene Tagesablauf (Stunden, Vertretung, Aufsichten)
+    public func schultag(_ datum: Date, vertretung: VertretungsPlan?) -> [Block] {
+        Stundenplan.tag(datum, zeiten: schulzeiten, unterricht: unterricht, vertretung: vertretung, haeuser: haeuser)
+    }
+
+    /// Weckzeit mit allem: Wochentag/Termine, dann Glätte, dann Anfahrt (Fahrzeit in Minuten, falls bekannt)
+    public func wecker(tag: Date, termine: [Termin], frei: FreierTag?, wetter: WetterTag?, vertretung: VertretungsPlan?, fahrtMinuten: Int?) -> Weckzeit {
+        var w = Weckzeit.berechne(tag: tag, termine: termine, frei: frei, e: self)
+        let frueh = Zeit.minuten(fruehestens) ?? 0
+        w = WetterWecken.weckzeit(w, wetter: wetter, minuten: glaetteFrueher, fruehestens: frueh)
+        if fahrt, let f = fahrtMinuten, let b = Stundenplan.beginn(schultag(tag, vertretung: vertretung)) {
+            let k = Zeit.kalender
+            w = Anfahrt.weckzeit(w, beginn: k.component(.hour, from: b) * 60 + k.component(.minute, from: b), fahrtMinuten: f, puffer: puffer,
+                                 fertig: fertig, fruehestens: frueh, art: fahrtArt == "oepnv" ? "mit Bus und Bahn" : fahrtArt == "fuss" ? "zu Fuß" : "mit dem Auto")
+        }
+        return w
     }
 
     /// Ist der Speiseplan vollständig eingerichtet (Passwort extra)?

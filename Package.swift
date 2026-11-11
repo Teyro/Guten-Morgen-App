@@ -5,7 +5,7 @@ import PackageDescription
 // App und Widget baut das Xcode-Projekt (project.yml, erzeugt mit XcodeGen).
 let package = Package(
     name: "GutenMorgen",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v17), .macOS(.v14), .watchOS(.v10)],
     products: [.library(name: "MorgenKern", targets: ["MorgenKern"])],
     targets: [
         .target(name: "MorgenKern"),
