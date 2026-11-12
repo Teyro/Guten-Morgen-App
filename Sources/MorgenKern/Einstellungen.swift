@@ -114,6 +114,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     /// WebUntis: eigener Plan, Klassen-Übersicht (Passwort im Schlüsselbund)
     public var untisAn = false
     public var untisLink = ""
+    /// Schule laut WebUntis (z. B. „hh5586“); leer = aus der Url
+    public var untisSchule = ""
     public var untisBenutzer = ""
     /// Grundwoche aus WebUntis als „Mein Stundenplan“ übernehmen
     public var untisUebernehmen = true
@@ -132,7 +134,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
              mitteilungen, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
-             untisAn, untisLink, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
+             untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -166,6 +168,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         fahrt = w(.fahrt, s.fahrt); fahrtArt = w(.fahrtArt, s.fahrtArt); fertig = w(.fertig, s.fertig); puffer = w(.puffer, s.puffer)
         glaetteFrueher = w(.glaetteFrueher, s.glaetteFrueher); routine = w(.routine, s.routine)
         untisAn = w(.untisAn, s.untisAn); untisLink = w(.untisLink, s.untisLink); untisBenutzer = w(.untisBenutzer, s.untisBenutzer)
+        untisSchule = w(.untisSchule, s.untisSchule)
         untisUebernehmen = w(.untisUebernehmen, s.untisUebernehmen); unterwegsAn = w(.unterwegsAn, s.unterwegsAn)
         unterwegsAktionen = w(.unterwegsAktionen, s.unterwegsAktionen); zuhauseRadius = w(.zuhauseRadius, s.zuhauseRadius)
     }

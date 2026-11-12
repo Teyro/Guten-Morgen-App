@@ -183,7 +183,8 @@ final class Kern {
         let d = UserDefaults.standard
         guard erzwingen || Date().timeIntervalSince1970 - d.double(forKey: "untisGeladen") > 6 * 3600 else { return }
         do {
-            let st = try await Untis.laden(link: e.untisLink, benutzer: e.untisBenutzer, passwort: untisPasswort, schluessel: untisSchluessel, kuerzel: e.kuerzel)
+            let st = try await Untis.laden(link: e.untisLink, schule: e.untisSchule, benutzer: e.untisBenutzer, passwort: untisPasswort,
+                                           schluessel: untisSchluessel.replacingOccurrences(of: " ", with: "").uppercased(), kuerzel: e.kuerzel.isEmpty ? e.untisBenutzer : e.kuerzel)
             untis = st; untisFehler = ""
             d.set(Date().timeIntervalSince1970, forKey: "untisGeladen")
             if e.untisUebernehmen {

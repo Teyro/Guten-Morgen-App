@@ -468,20 +468,22 @@ struct EinstellungenAnsicht: View {
                 Toggle("WebUntis verbinden", isOn: $k.einstellungen.untisAn)
                 if kern.einstellungen.untisAn {
                     if QRScanner.verfuegbar { Button { scannen = true } label: { Label("QR-Code „Untis Mobile“ scannen", systemImage: "qrcode.viewfinder") } }
-                    TextField("Adresse der Anmeldeseite oder untis://…", text: $k.einstellungen.untisLink).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    TextField("Benutzername", text: $k.einstellungen.untisBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("Schlüssel aus „Untis Mobile“ (bei zweitem Faktor)", text: $k.untisSchluessel)
+                    LabeledContent("Url") { TextField("hh5586.webuntis.com", text: $k.einstellungen.untisLink).multilineTextAlignment(.trailing).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL) }
+                    LabeledContent("Schule") { TextField("hh5586", text: $k.einstellungen.untisSchule).multilineTextAlignment(.trailing).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    LabeledContent("Benutzer") { TextField("Sta", text: $k.einstellungen.untisBenutzer).multilineTextAlignment(.trailing).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    LabeledContent("Schlüssel") { SecureField("aus „Untis Mobile“", text: $k.untisSchluessel).multilineTextAlignment(.trailing).textInputAutocapitalization(.characters).autocorrectionDisabled() }
                     SecureField("Passwort (nur ohne zweiten Faktor)", text: $k.untisPasswort)
                     Toggle("Als „Mein Stundenplan“ übernehmen", isOn: $k.einstellungen.untisUebernehmen)
                     Button("Jetzt laden") { Task { await kern.untisLaden(erzwingen: true); kern.meldung = kern.untisFehler.isEmpty ? "Stundenplan aus WebUntis geladen" : kern.untisFehler } }
                     if !kern.untisFehler.isEmpty { Text(kern.untisFehler).font(.footnote).foregroundStyle(.orange) }
                 }
-            } header: { Text("WebUntis") } footer: { Text("Mit zweitem Faktor: in WebUntis am Computer auf deinen Namen → Freigaben → „Untis Mobile“ → Anzeigen. Den QR-Code hier scannen – dann meldet sich die App wie die Untis-App an und braucht dein Passwort nicht. Ohne zweiten Faktor reichen Adresse, Benutzer und Passwort. Geladen werden deine Stunden und die Pläne deiner Klassen (für „wer ist noch in der Klasse“).") }
+            } header: { Text("WebUntis") } footer: { Text("In WebUntis auf deinen Namen → Freigaben → „Zugriff über Untis Mobile“ → Anzeigen. Unter dem QR-Code stehen Url, Schule, Benutzer und Schlüssel – hier abtippen (oder den QR-Code von einem anderen Bildschirm scannen). Damit meldet sich die App wie die Untis-App an, auch mit zweitem Faktor, und braucht dein Passwort nicht. Geladen werden deine Stunden und die Pläne deiner Klassen.") }
             .sheet(isPresented: $scannen) {
                 QRScanner { text in
                     scannen = false
                     if let q = Untis.qr(text) {
-                        k.einstellungen.untisLink = text.components(separatedBy: "&key=").first ?? text
+                        k.einstellungen.untisLink = q.basis.replacingOccurrences(of: "https://", with: "")
+                        k.einstellungen.untisSchule = q.schule
                         k.einstellungen.untisBenutzer = q.benutzer
                         k.untisSchluessel = q.schluessel
                         k.einstellungen.untisAn = true

@@ -67,6 +67,22 @@ public enum Untis {
         public var errorDescription: String? { if case .text(let t) = self { return t }; return nil }
     }
 
+    /// Wie in WebUntis unter Freigaben → Untis Mobile: Url („hh5586.webuntis.com“, auch mit https:// oder ganzer Anmelde-Adresse)
+    /// und Schule („hh5586“) – fehlt die Schule, steckt sie meist im Servernamen
+    public static func server(url: String, schule: String) -> (basis: String, schule: String)? {
+        if let z = zerlege(url) { return (z.basis, schule.trimmingCharacters(in: .whitespaces).isEmpty ? z.schule : schule.trimmingCharacters(in: .whitespaces)) }
+        var t = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        for p in ["https://", "http://"] where t.hasPrefix(p) { t.removeFirst(p.count) }
+        let host = String(t.split(whereSeparator: { "/?#".contains($0) }).first ?? "")
+        guard host.contains("."), !host.contains(" ") else { return nil }
+        var s = schule.trimmingCharacters(in: .whitespaces)
+        if s.isEmpty, host.hasSuffix(".webuntis.com"), let erst = host.split(separator: ".").first, !["webuntis", "mese", "nessa", "neilo", "arche", "ajax", "erato", "kephiso", "melpomene", "poly", "peleus", "terpsichore", "thalia", "tipo", "urania", "herakles", "hepta", "asopo", "cissa"].contains(String(erst)) {
+            s = String(erst)
+        }
+        guard !s.isEmpty else { return nil }
+        return ("https://" + host, s)
+    }
+
     /// „https://server.webuntis.com/WebUntis/?school=xyz#/basic/login“ → (https://server.webuntis.com, xyz)
     public static func zerlege(_ link: String) -> (basis: String, schule: String)? {
         let l = link.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -237,10 +253,10 @@ public enum Untis {
 
     /// Eigene Stunden (diese und nächste Woche) und die Pläne meiner Klassen laden
     /// [link]: Adresse der Anmeldeseite oder der Text des QR-Codes; [schluessel] (aus dem QR-Code) geht vor dem Passwort
-    public static func laden(link: String, benutzer: String, passwort: String, schluessel: String = "", kuerzel: String, jetzt: Date = Date()) async throws -> UntisStand {
+    public static func laden(link: String, schule: String = "", benutzer: String, passwort: String, schluessel: String = "", kuerzel: String, jetzt: Date = Date()) async throws -> UntisStand {
         let q = qr(link)
-        guard let z = q.map({ (basis: $0.basis, schule: $0.schule) }) ?? zerlege(link) else {
-            throw Fehler.text("Bitte die Adresse der WebUntis-Anmeldeseite (https://…?school=…) oder den Text des QR-Codes „Untis Mobile“ eintragen.")
+        guard let z = q.map({ (basis: $0.basis, schule: $0.schule) }) ?? server(url: link, schule: schule) else {
+            throw Fehler.text("Bitte Url (z. B. hh5586.webuntis.com) und Schule (z. B. hh5586) eintragen – beides steht in WebUntis unter Freigaben → Untis Mobile.")
         }
         let s = try Sitzung(basis: z.basis, schule: z.schule)
         let nutzer = (q?.benutzer).flatMap { $0.isEmpty ? nil : $0 } ?? benutzer.trimmingCharacters(in: .whitespaces)

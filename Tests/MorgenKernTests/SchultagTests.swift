@@ -115,6 +115,11 @@ final class UntisTests: XCTestCase {
         XCTAssertEqual(l?.basis, "https://nessa.webuntis.com")
         XCTAssertEqual(l?.schule, "gs-oejendorf")
         XCTAssertNil(Untis.zerlege("http://unsicher.de/?school=x"))
+        // so, wie es in WebUntis unter „Untis Mobile“ steht
+        XCTAssertEqual(Untis.server(url: "https://hh5586.webuntis.com", schule: "")?.schule, "hh5586")
+        XCTAssertEqual(Untis.server(url: "hh5586.webuntis.com", schule: "hh5586")?.basis, "https://hh5586.webuntis.com")
+        XCTAssertNil(Untis.server(url: "nessa.webuntis.com", schule: ""))
+        XCTAssertEqual(Untis.server(url: "nessa.webuntis.com", schule: "gs-x")?.schule, "gs-x")
     }
 
     func testStundenUndKlassen() {
