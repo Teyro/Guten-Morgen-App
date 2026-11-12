@@ -47,8 +47,10 @@ public struct Block: Codable, Hashable, Sendable {
     public var text: String
     /// Die feste Stunde, die hier eigentlich wäre (durch Vertretung ersetzt oder ausgefallen) – wird durchgestrichen gezeigt
     public var ersetzt: String?
-    public init(name: String, von: Date, bis: Date, art: Art, text: String, ersetzt: String? = nil) {
-        self.name = name; self.von = von; self.bis = bis; self.art = art; self.text = text; self.ersetzt = ersetzt
+    /// Aufgeteilte Klassen in dieser Stunde laut Vertretungsplan
+    public var aufteilung: [String]?
+    public init(name: String, von: Date, bis: Date, art: Art, text: String, ersetzt: String? = nil, aufteilung: [String]? = nil) {
+        self.name = name; self.von = von; self.bis = bis; self.art = art; self.text = text; self.ersetzt = ersetzt; self.aufteilung = aufteilung
     }
     /// In der Übersicht zeigen (eigene Abschnitte und ausgefallene feste Stunden)
     public var zeigen: Bool { meins || ersetzt != nil }
@@ -76,7 +78,7 @@ public enum Stundenplan {
     /// Leer, wenn an diesem Wochentag nichts geplant ist und die Vertretung nichts nennt.
     /// [ausfall]: ausgefallene eigene Stunden laut WebUntis (Minuten von–bis) – ohne Vertretung dafür: „Entfall“
     public static func tag(_ datum: Date, zeiten: [Schulzeit], unterricht: [Unterricht], vertretung: VertretungsPlan?, haeuser: [String: [String]] = [:],
-                           ausfall: [ClosedRange<Int>] = []) -> [Block] {
+                           ausfall: [ClosedRange<Int>] = [], ganz: Bool = false) -> [Block] {
         let wt = Zeit.kalender.component(.weekday, from: datum)
         let tag = Zeit.kalender.startOfDay(for: datum)
         let v = vertretung.flatMap { $0.datum == nil || $0.datum == Zeit.iso(datum) ? $0 : nil }
@@ -84,8 +86,11 @@ public enum Stundenplan {
         for z in zeiten.sorted(by: { $0.von < $1.von }) {
             let von = zeit(tag, z.von), bis = zeit(tag, z.bis)
             if z.pause {
-                if let p = v?.pausen.first(where: { pausenNummer($0.pause) == pausenNummer(z.name) }) {
-                    bloecke.append(Block(name: z.name, von: von, bis: bis, art: .aufsicht, text: (p.reserve ? "Reserve " : "Aufsicht ") + p.ort))
+                // Mehrere Aufsichten in derselben Pause zusammenfassen
+                let ps = v?.pausen.filter { pausenNummer($0.pause) == pausenNummer(z.name) } ?? []
+                if !ps.isEmpty {
+                    let text = (ps.allSatisfy(\.reserve) ? "Reserve " : "Aufsicht ") + ps.map(\.ort).joined(separator: " + ")
+                    bloecke.append(Block(name: z.name, von: von, bis: bis, art: .aufsicht, text: text))
                 } else {
                     bloecke.append(Block(name: z.name, von: von, bis: bis, art: .pause, text: "Pause"))
                 }
@@ -103,8 +108,12 @@ public enum Stundenplan {
                 bloecke.append(Block(name: z.name, von: von, bis: bis, art: .frei, text: "frei"))
             }
         }
+        if let a = v?.aufteilung {
+            for i in bloecke.indices where !(a[bloecke[i].name] ?? []).isEmpty { bloecke[i].aufteilung = a[bloecke[i].name] }
+        }
         guard let erst = bloecke.firstIndex(where: \.zeigen), let letzt = bloecke.lastIndex(where: \.zeigen) else { return [] }
-        return Array(bloecke[erst...letzt])
+        // [ganz]: immer das ganze Raster 1–6 mit beiden Pausen (Übersicht „Schule heute“)
+        return ganz ? bloecke : Array(bloecke[erst...letzt])
     }
 
     /// Wann ich am Tag in der Schule sein muss (Beginn des ersten eigenen Abschnitts)

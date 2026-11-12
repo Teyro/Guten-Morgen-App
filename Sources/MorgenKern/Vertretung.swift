@@ -26,6 +26,8 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     /// Die ganze „Wichtig“-Zelle (für alle)
     public var alleHinweise: [String] = []
     public var fehlen: [String] = []
+    /// Aufgeteilte Klassen je Stunde („A“ in der Klassenspalte): "3" → ["4a", "4b"] (optional: alte Speicherstände)
+    public var aufteilung: [String: [String]]? = nil
     public var ausserListe: [String] = []
     public var datei = ""
     /// Wie viele Zellen im Stundenteil ausgefüllt sind (leere Vorlage = 0)
@@ -317,6 +319,13 @@ public enum Vertretung {
             }
             guard i > kopfI, !titel.isEmpty, !t.hasPrefix("wichtig") else { continue }
             p.belegt += z.dropFirst().filter { !$0.text.isEmpty }.count
+            let geteilt = z.dropFirst().filter { $0.text == "A" }.flatMap { c in kopf.filter { $0.von < c.bis && $0.bis > c.von }.map(\.text) }
+            if !geteilt.isEmpty {
+                let nr = titel.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+                var a = p.aufteilung ?? [:]
+                for g in geteilt where !(a[nr] ?? []).contains(g) { a[nr, default: []].append(g) }
+                p.aufteilung = a
+            }
             guard !k.isEmpty else { continue }
             for c in z.dropFirst() where !c.text.isEmpty && hat(c.text, k) {
                 let ueber = kopf.filter { $0.von < c.bis && $0.bis > c.von }

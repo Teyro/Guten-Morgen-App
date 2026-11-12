@@ -180,8 +180,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     }
 
     /// Der eigene Tagesablauf (Stunden, Vertretung, Aufsichten)
-    public func schultag(_ datum: Date, vertretung: VertretungsPlan?, ausfall: [ClosedRange<Int>] = []) -> [Block] {
-        Stundenplan.tag(datum, zeiten: schulzeiten, unterricht: unterricht, vertretung: vertretung, haeuser: haeuser, ausfall: ausfall)
+    public func schultag(_ datum: Date, vertretung: VertretungsPlan?, ausfall: [ClosedRange<Int>] = [], ganz: Bool = false) -> [Block] {
+        Stundenplan.tag(datum, zeiten: schulzeiten, unterricht: unterricht, vertretung: vertretung, haeuser: haeuser, ausfall: ausfall, ganz: ganz)
     }
 
     /// Weckzeit mit allem: Wochentag/Termine, dann Glätte, dann Anfahrt (Fahrzeit in Minuten, falls bekannt)

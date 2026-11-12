@@ -202,4 +202,19 @@ final class ErsetztTests: XCTestCase {
         XCTAssertEqual(Zeit.uhrzeit(Stundenplan.beginn(b2)!), "10:25")
         XCTAssertEqual(b2.first?.name, "1")   // durchgestrichen trotzdem sichtbar
     }
+
+    func testGanzesRasterMitPausenUndAufteilung() {
+        let mo = Zeit.kalender.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 12))!
+        var e = MorgenEinstellungen()
+        e.unterricht = [Unterricht(tag: 2, stunde: "3", klasse: "6b", fach: "Deutsch")]
+        var v = VertretungsPlan(); v.datum = "2026-11-09"
+        v.pausen = [.init(pause: "2. Pause", ort: "Hof"), .init(pause: "2. Pause", ort: "Mensa")]
+        v.aufteilung = ["3": ["4a", "4b"]]
+        let b = e.schultag(mo, vertretung: v, ganz: true)
+        XCTAssertEqual(b.map(\.name), ["1", "2", "1. Pause", "3", "4", "2. Pause", "5", "6"])
+        XCTAssertEqual(b[2].text, "Pause")
+        XCTAssertEqual(b[5].text, "Aufsicht Hof + Mensa")
+        XCTAssertEqual(b[3].aufteilung, ["4a", "4b"])
+        XCTAssertEqual(e.schultag(mo, vertretung: v).map(\.name), ["3", "4", "2. Pause"])
+    }
 }

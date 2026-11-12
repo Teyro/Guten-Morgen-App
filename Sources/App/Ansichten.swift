@@ -263,6 +263,7 @@ struct SchuleKarte: View {
     let kern: Kern
     let oeffne: (Bereich) -> Void
     @Environment(\.openURL) private var oeffneURL
+    @State private var bemerkungen = false
 
     var body: some View {
         let e = kern.einstellungen
@@ -270,15 +271,28 @@ struct SchuleKarte: View {
             if !kern.anfahrtText.isEmpty {
                 Label(kern.anfahrtText, systemImage: e.fahrtArt == "oepnv" ? "tram.fill" : e.fahrtArt == "fuss" ? "figure.walk" : "car.fill").font(.callout.weight(.medium))
             }
-            // Mit Stundenplan: eine Liste in Reihenfolge – Stunden, Vertretungen, Aufsichten; ersetzte und ausgefallene
-            // feste Stunden stehen durchgestrichen da, der Ersatz darunter
-            let tag = kern.schultag
+            // Grundlage Untis, darüber der Vertretungsplan: immer 1.–6. Stunde mit beiden Pausen in Reihenfolge;
+            // ersetzte und ausgefallene Stunden durchgestrichen, Abweichungen farbig hinterlegt
+            let tag = kern.schultagGanz
             if !tag.isEmpty {
                 Button { oeffne(.stundenplan) } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(tag.filter { $0.zeigen }, id: \.von) { b in StundenZeile(b: b) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(tag, id: \.von) { b in StundenZeile(b: b) }
                     }
                 }.buttonStyle(.plain)
+            }
+            if let p = kern.vertretung, !p.alleHinweise.isEmpty {
+                Button { bemerkungen = true } label: {
+                    Label("Alle Bemerkungen", systemImage: "text.bubble").font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 6).glas(12)
+                }.buttonStyle(.plain)
+                .sheet(isPresented: $bemerkungen) {
+                    NavigationStack {
+                        List(p.alleHinweise, id: \.self) { Text($0) }
+                            .navigationTitle("Bemerkungen").navigationBarTitleDisplayMode(.inline)
+                            .toolbar { Button("Fertig") { bemerkungen = false } }
+                    }.presentationDetents([.medium, .large])
+                }
             }
             if e.vertretung && !e.vertretungLink.isEmpty {
                 Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e, mitStunden: tag.isEmpty) } }.buttonStyle(.plain)
@@ -701,11 +715,27 @@ struct StundenZeile: View {
         switch b.art {
         case .vertretung: return .purple
         case .aufsicht: return .orange
-        case .frei: return .gray
+        case .frei, .pause: return .gray
         default: return .blue
         }
     }
+    /// Nicht regulär (Vertretung, Aufsicht, Entfall): Zeile farbig hinterlegt
+    private var abweichend: Bool { b.art == .vertretung || b.art == .aufsicht || b.ersetzt != nil }
     var body: some View {
+        if b.art == .pause {
+            // Pause ohne Aufsicht: schmale Zeile
+            HStack(spacing: 12) {
+                Text(b.marke).font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 40)
+                Text("Pause").font(.subheadline).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Text(Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis)).font(.caption).foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        } else {
+            zeile
+        }
+    }
+    private var zeile: some View {
         HStack(spacing: 12) {
             Text(b.marke).font(.system(.callout, design: .rounded).weight(.bold)).foregroundStyle(farbe)
                 .frame(width: 40, height: 40).background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -718,6 +748,15 @@ struct StundenZeile: View {
                 Text(Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+        }
+        .padding(abweichend ? 6 : 0)
+        .background(abweichend ? farbe.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // Aufgeteilte Klassen oben rechts in der Ecke
+        .overlay(alignment: .topTrailing) {
+            if let a = b.aufteilung, !a.isEmpty {
+                Text("A " + a.joined(separator: " ")).font(.caption2.weight(.bold)).foregroundStyle(Color.orange)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Color.orange.opacity(0.15), in: Capsule())
+            }
         }
         .contentShape(Rectangle())
     }

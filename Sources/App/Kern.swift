@@ -136,6 +136,7 @@ final class Kern {
 
     /// Eigener Tagesablauf des Schultags (heute, ab 16 Uhr der nächste) und von heute
     var schultag: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung, ausfall: ausfall(schulTag)) }
+    var schultagGanz: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung, ausfall: ausfall(schulTag), ganz: true) }
     var heuteBloecke: [Block] { freiHeute == nil ? einstellungen.schultag(Date(), vertretung: vertretung, ausfall: ausfall(Date())) : [] }
     /// Ausgefallene eigene Stunden laut WebUntis an einem Tag
     func ausfall(_ tag: Date) -> [ClosedRange<Int>] {

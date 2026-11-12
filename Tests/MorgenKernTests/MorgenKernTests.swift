@@ -54,11 +54,13 @@ final class MorgenKernTests: XCTestCase {
             + tr([tc("Klasse", 1000), tc("1a", 1000), tc("1b", 1000)])
             + tr([tc("1", 1000), tc("", 500), tc("Sta", 500), tc("", 500), tc("", 500)])
             + tr([tc("3", 1000), tc("", 500), tc("", 500), tc("Mey", 500), tc("Sta", 500)])
+            + tr([tc("4", 1000), tc("A", 1000), tc("A", 1000)])
             + tr([tc("Wichtig!", 1000), tc("Sta 4. Std Termin", 1000), tc("1. Pause", 500), tc("2. Pause", 500)])
             + tr([tc("", 1000), tc("Haus 4", 1000), tc("Sta", 500), tc("Wal", 500)])
             + "</w:tbl></w:body>"
         let p = Vertretung.auswerten(xml, kuerzel: "Sta")
         XCTAssertEqual(p.datum, "2026-11-06")
+        XCTAssertEqual(p.aufteilung, ["4": ["1a", "1b"]])
         XCTAssertEqual(p.stunden.map { "\($0.stunde):\($0.klasse)" }, ["1:1a", "3:1b"])
         XCTAssertEqual(p.pausen.map { "\($0.pause)@\($0.ort)" }, ["1. Pause@Haus 4"])
         XCTAssertTrue(p.fehlt)
