@@ -135,8 +135,13 @@ final class Kern {
     }
 
     /// Eigener Tagesablauf des Schultags (heute, ab 16 Uhr der nächste) und von heute
-    var schultag: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung) }
-    var heuteBloecke: [Block] { freiHeute == nil ? einstellungen.schultag(Date(), vertretung: vertretung) : [] }
+    var schultag: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung, ausfall: ausfall(schulTag)) }
+    var heuteBloecke: [Block] { freiHeute == nil ? einstellungen.schultag(Date(), vertretung: vertretung, ausfall: ausfall(Date())) : [] }
+    /// Ausgefallene eigene Stunden laut WebUntis an einem Tag
+    func ausfall(_ tag: Date) -> [ClosedRange<Int>] {
+        let iso = Zeit.iso(tag)
+        return untis?.meine.filter { $0.datum == iso && $0.entfaellt && $0.bis > $0.von }.map { $0.von...$0.bis } ?? []
+    }
 
     /// „Losfahren um 7 Uhr 12, 23 Minuten mit dem Auto.“ – nur am Morgen des Schultags
     var anfahrtText: String {

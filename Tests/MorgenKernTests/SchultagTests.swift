@@ -175,3 +175,31 @@ final class UntisTests: XCTestCase {
         XCTAssertFalse(e.unterwegs(hier: nil))
     }
 }
+
+final class ErsetztTests: XCTestCase {
+    func testVertretungUndEntfallZeigenDieFesteStunde() {
+        let k = Zeit.kalender
+        let mo = k.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 12))!
+        var e = MorgenEinstellungen()
+        e.unterricht = [Unterricht(tag: 2, stunde: "1", klasse: "5a", fach: "Mathe"), Unterricht(tag: 2, stunde: "3", klasse: "6b", fach: "Deutsch"), Unterricht(tag: 2, stunde: "5", klasse: "4a", fach: "Sport")]
+        var v = VertretungsPlan(); v.datum = "2026-11-09"; v.stunden = [.init(stunde: "3", klasse: "2c")]
+        // 5. Stunde (12:20–13:05) fällt laut WebUntis aus
+        let b = e.schultag(mo, vertretung: v, ausfall: [740...785])
+        let drei = b.first { $0.name == "3" }!
+        XCTAssertEqual(drei.art, .vertretung)
+        XCTAssertEqual(drei.ersetzt, "6b Deutsch")
+        let fuenf = b.first { $0.name == "5" }!
+        XCTAssertEqual(fuenf.art, .frei)
+        XCTAssertEqual(fuenf.text, "Entfall")
+        XCTAssertEqual(fuenf.ersetzt, "4a Sport")
+        XCTAssertTrue(fuenf.zeigen)
+        XCTAssertFalse(fuenf.meins)
+        let s = Stundenplan.satz(b)
+        XCTAssertTrue(s.contains("statt 6b Deutsch"), s)
+        XCTAssertTrue(s.contains("4a Sport fällt aus"), s)
+        // erste Stunde fällt aus → Schulbeginn verschiebt sich
+        let b2 = e.schultag(mo, vertretung: nil, ausfall: [510...555])
+        XCTAssertEqual(Zeit.uhrzeit(Stundenplan.beginn(b2)!), "10:25")
+        XCTAssertEqual(b2.first?.name, "1")   // durchgestrichen trotzdem sichtbar
+    }
+}

@@ -45,7 +45,13 @@ public struct Block: Codable, Hashable, Sendable {
     public var bis: Date
     public var art: Art
     public var text: String
-    public init(name: String, von: Date, bis: Date, art: Art, text: String) { self.name = name; self.von = von; self.bis = bis; self.art = art; self.text = text }
+    /// Die feste Stunde, die hier eigentlich wäre (durch Vertretung ersetzt oder ausgefallen) – wird durchgestrichen gezeigt
+    public var ersetzt: String?
+    public init(name: String, von: Date, bis: Date, art: Art, text: String, ersetzt: String? = nil) {
+        self.name = name; self.von = von; self.bis = bis; self.art = art; self.text = text; self.ersetzt = ersetzt
+    }
+    /// In der Übersicht zeigen (eigene Abschnitte und ausgefallene feste Stunden)
+    public var zeigen: Bool { meins || ersetzt != nil }
 
     /// Kurzname: „3.“ bzw. „1. P“
     public var marke: String { Int(name) != nil ? "\(name)." : name.replacingOccurrences(of: "Pause", with: "P").replacingOccurrences(of: " ", with: "") }
@@ -68,7 +74,9 @@ public enum Stundenplan {
 
     /// Der Tag in Abschnitten: eigene Stunden, Vertretungen, Aufsichten; dazwischen Freistunden und Pausen.
     /// Leer, wenn an diesem Wochentag nichts geplant ist und die Vertretung nichts nennt.
-    public static func tag(_ datum: Date, zeiten: [Schulzeit], unterricht: [Unterricht], vertretung: VertretungsPlan?, haeuser: [String: [String]] = [:]) -> [Block] {
+    /// [ausfall]: ausgefallene eigene Stunden laut WebUntis (Minuten von–bis) – ohne Vertretung dafür: „Entfall“
+    public static func tag(_ datum: Date, zeiten: [Schulzeit], unterricht: [Unterricht], vertretung: VertretungsPlan?, haeuser: [String: [String]] = [:],
+                           ausfall: [ClosedRange<Int>] = []) -> [Block] {
         let wt = Zeit.kalender.component(.weekday, from: datum)
         let tag = Zeit.kalender.startOfDay(for: datum)
         let v = vertretung.flatMap { $0.datum == nil || $0.datum == Zeit.iso(datum) ? $0 : nil }
@@ -83,14 +91,19 @@ public enum Stundenplan {
                 }
             } else if let s = v?.stunden.first(where: { $0.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) == z.name }) {
                 let h = Vertretung.haus(s.klasse, haeuser)
-                bloecke.append(Block(name: z.name, von: von, bis: bis, art: .vertretung, text: "Vertretung \(s.klasse)" + (h.isEmpty ? "" : " · \(h)")))
+                let fest = unterricht.first(where: { $0.tag == wt && $0.stunde == z.name })?.text
+                bloecke.append(Block(name: z.name, von: von, bis: bis, art: .vertretung, text: "Vertretung \(s.klasse)" + (h.isEmpty ? "" : " · \(h)"), ersetzt: fest))
             } else if let u = unterricht.first(where: { $0.tag == wt && $0.stunde == z.name }) {
-                bloecke.append(Block(name: z.name, von: von, bis: bis, art: .unterricht, text: u.text))
+                if ausfall.contains(where: { $0.lowerBound < z.bis && $0.upperBound > z.von }) {
+                    bloecke.append(Block(name: z.name, von: von, bis: bis, art: .frei, text: "Entfall", ersetzt: u.text))
+                } else {
+                    bloecke.append(Block(name: z.name, von: von, bis: bis, art: .unterricht, text: u.text))
+                }
             } else {
                 bloecke.append(Block(name: z.name, von: von, bis: bis, art: .frei, text: "frei"))
             }
         }
-        guard let erst = bloecke.firstIndex(where: \.meins), let letzt = bloecke.lastIndex(where: \.meins) else { return [] }
+        guard let erst = bloecke.firstIndex(where: \.zeigen), let letzt = bloecke.lastIndex(where: \.zeigen) else { return [] }
         return Array(bloecke[erst...letzt])
     }
 
@@ -109,11 +122,13 @@ public enum Stundenplan {
 
     /// Gesprochen: „Deine Stunden: 1. 5a Mathe in R12, 3. Vertretung 2c in Haus 2, Aufsicht in der 2. Pause: Mensa.“
     public static func satz(_ bloecke: [Block]) -> String {
-        let meine = bloecke.filter(\.meins)
+        let meine = bloecke.filter(\.zeigen)
         guard !meine.isEmpty else { return "" }
         let teile = meine.map { b -> String in
             switch b.art {
             case .aufsicht: return "\(b.text.hasPrefix("Reserve") ? "Reserve" : "Aufsicht") in der \(b.name): \(b.text.replacingOccurrences(of: "Aufsicht ", with: "").replacingOccurrences(of: "Reserve ", with: ""))"
+            case .frei: return "\(b.name). \(b.ersetzt?.replacingOccurrences(of: " · ", with: " in ") ?? "Stunde") fällt aus"
+            case .vertretung where b.ersetzt != nil: return "\(b.name). statt \(b.ersetzt!.replacingOccurrences(of: " · ", with: " in ")) \(b.text.replacingOccurrences(of: " · ", with: " in "))"
             default: return "\(b.name). \(b.text.replacingOccurrences(of: " · ", with: " in "))"
             }
         }

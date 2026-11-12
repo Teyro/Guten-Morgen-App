@@ -270,12 +270,18 @@ struct SchuleKarte: View {
             if !kern.anfahrtText.isEmpty {
                 Label(kern.anfahrtText, systemImage: e.fahrtArt == "oepnv" ? "tram.fill" : e.fahrtArt == "fuss" ? "figure.walk" : "car.fill").font(.callout.weight(.medium))
             }
-            // eigene Stunden (Vertretungen und Aufsichten stehen darunter beim Vertretungsplan)
-            ForEach(kern.schultag.filter { $0.art == .unterricht }, id: \.von) { b in
-                Zeile(marke: b.marke, farbe: .blue, titel: b.text, unter: Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis))
+            // Mit Stundenplan: eine Liste in Reihenfolge – Stunden, Vertretungen, Aufsichten; ersetzte und ausgefallene
+            // feste Stunden stehen durchgestrichen da, der Ersatz darunter
+            let tag = kern.schultag
+            if !tag.isEmpty {
+                Button { oeffne(.stundenplan) } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(tag.filter { $0.zeigen }, id: \.von) { b in StundenZeile(b: b) }
+                    }
+                }.buttonStyle(.plain)
             }
             if e.vertretung && !e.vertretungLink.isEmpty {
-                Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e) } }.buttonStyle(.plain)
+                Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e, mitStunden: tag.isEmpty) } }.buttonStyle(.plain)
             }
             if e.obstBereit && kern.obstHeute {
                 Zeile(marke: "🍎", farbe: .green, titel: kern.schulTagName == "heute" ? "Heute kommt Schulobst" : "Schulobst kommt", unter: nil)
@@ -306,13 +312,15 @@ struct SchuleKarte: View {
         }
     }
 
-    @ViewBuilder private func vertretung(_ e: MorgenEinstellungen) -> some View {
+    /// [mitStunden]: Vertretungsstunden und Aufsichten einzeln zeigen (nur ohne eigenen Stundenplan – sonst stehen sie oben in der Liste)
+    @ViewBuilder private func vertretung(_ e: MorgenEinstellungen, mitStunden: Bool = true) -> some View {
                 if let p = kern.vertretung {
                     if p.fehlt { Hinweis(text: "Du bist als fehlend eingetragen", farbe: .red) }
                     if p.ausserHaus { Hinweis(text: "Du bist außer Haus eingetragen", farbe: .orange) }
                     if p.stunden.isEmpty && p.pausen.isEmpty && !p.fehlt {
                         Label("Keine Vertretung für dich", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.body.weight(.medium))
                     }
+                    if mitStunden {
                     ForEach(p.stunden, id: \.self) { s in
                         let haus = Vertretung.haus(s.klasse, e.haeuser)
                         Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .purple,
@@ -321,6 +329,7 @@ struct SchuleKarte: View {
                     ForEach(p.pausen, id: \.self) { a in
                         Zeile(marke: String(a.pause.prefix(1)) + ". P", farbe: .orange,
                               titel: a.reserve ? "Aufsicht (Reserve)" : "Hofaufsicht", unter: "\(a.pause) · \(a.ort)")
+                    }
                     }
                     ForEach(p.hinweise, id: \.self) { h in Label(h, systemImage: "exclamationmark.bubble.fill").font(.callout).foregroundStyle(.secondary) }
                     if !p.fehlen.isEmpty { Text("Es fehlen: " + p.fehlen.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
@@ -682,5 +691,34 @@ struct WeckmusikAbschnitt: View {
         .fileImporter(isPresented: $datei, allowedContentTypes: [.audio]) { erg in
             if case .success(let url) = erg { _ = musik.dateiGewaehlt(url) }
         }
+    }
+}
+
+/// Ein Abschnitt des Schultags: Marke, Inhalt, Uhrzeit – ersetzte oder ausgefallene feste Stunde durchgestrichen, der Ersatz darunter
+struct StundenZeile: View {
+    let b: Block
+    private var farbe: Color {
+        switch b.art {
+        case .vertretung: return .purple
+        case .aufsicht: return .orange
+        case .frei: return .gray
+        default: return .blue
+        }
+    }
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(b.marke).font(.system(.callout, design: .rounded).weight(.bold)).foregroundStyle(farbe)
+                .frame(width: 40, height: 40).background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                if let alt = b.ersetzt {
+                    Text(alt).font(.subheadline).strikethrough(true, color: .secondary).foregroundStyle(.secondary)
+                }
+                Text(b.art == .aufsicht ? (b.text.hasPrefix("Reserve") ? "Aufsicht (Reserve) · " : "Hofaufsicht · ") + b.text.replacingOccurrences(of: "Aufsicht ", with: "").replacingOccurrences(of: "Reserve ", with: "") : b.text)
+                    .font(.body.weight(.semibold)).foregroundStyle(b.art == .frei ? Color.secondary : Color.primary)
+                Text(Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
     }
 }
