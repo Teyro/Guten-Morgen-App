@@ -17,7 +17,7 @@ final class Kalender {
         guard termineErlaubt else { return [] }
         let bis = Zeit.kalender.date(byAdding: .day, value: tage, to: von) ?? von
         let p = speicher.predicateForEvents(withStart: von, end: bis, calendars: nil)
-        return speicher.events(matching: p).map { Termin(titel: $0.title ?? "Termin", start: $0.startDate, ganztags: $0.isAllDay) }
+        return Termin.ohneDoppelte(speicher.events(matching: p).map { Termin(titel: $0.title ?? "Termin", start: $0.startDate, ganztags: $0.isAllDay) })
     }
 
     func erinnerungenHeute() async -> [String] {

@@ -722,18 +722,7 @@ struct StundenZeile: View {
     /// Nicht regulär (Vertretung, Aufsicht, Entfall): Zeile farbig hinterlegt
     private var abweichend: Bool { b.art == .vertretung || b.art == .aufsicht || b.ersetzt != nil }
     var body: some View {
-        if b.art == .pause {
-            // Pause ohne Aufsicht: schmale Zeile
-            HStack(spacing: 12) {
-                Text(b.marke).font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 40)
-                Text("Pause").font(.subheadline).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Text(Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis)).font(.caption).foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
-        } else {
-            zeile
-        }
+        zeile
     }
     private var zeile: some View {
         HStack(spacing: 12) {
@@ -744,13 +733,15 @@ struct StundenZeile: View {
                     Text(alt).font(.subheadline).strikethrough(true, color: .secondary).foregroundStyle(.secondary)
                 }
                 Text(b.art == .aufsicht ? (b.text.hasPrefix("Reserve") ? "Aufsicht (Reserve) · " : "Hofaufsicht · ") + b.text.replacingOccurrences(of: "Aufsicht ", with: "").replacingOccurrences(of: "Reserve ", with: "") : b.text)
-                    .font(.body.weight(.semibold)).foregroundStyle(b.art == .frei ? Color.secondary : Color.primary)
+                    .font(.body.weight(.semibold)).foregroundStyle(b.art == .frei || b.art == .pause ? Color.secondary : Color.primary)
                 Text(Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
-        .padding(abweichend ? 6 : 0)
-        .background(abweichend ? farbe.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // Hinterlegung ragt nach außen, damit Marke und Text bündig mit den anderen Zeilen bleiben
+        .background {
+            if abweichend { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(farbe.opacity(0.10)).padding(-5) }
+        }
         // Aufgeteilte Klassen oben rechts in der Ecke
         .overlay(alignment: .topTrailing) {
             if let a = b.aufteilung, !a.isEmpty {

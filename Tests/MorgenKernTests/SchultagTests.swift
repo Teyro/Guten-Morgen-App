@@ -203,6 +203,13 @@ final class ErsetztTests: XCTestCase {
         XCTAssertEqual(b2.first?.name, "1")   // durchgestrichen trotzdem sichtbar
     }
 
+    func testDoppelteTermine() {
+        let d = Zeit.kalender.date(from: DateComponents(year: 2026, month: 11, day: 12))!
+        let t = ["🎂 Johanna Griese", "🎂 Johanna Griese (1994)", "🎂 Johanna Griese (1994)", "🎂 Jörn Westphal", "Johanna Griese (Geburtstag)", "Jörn Westphal (Geburtstag)", "Elternabend"]
+            .map { Termin(titel: $0, start: d, ganztags: true) }
+        XCTAssertEqual(Termin.ohneDoppelte(t).map(\.titel), ["🎂 Johanna Griese", "🎂 Jörn Westphal", "Elternabend"])
+    }
+
     func testGanzesRasterMitPausenUndAufteilung() {
         let mo = Zeit.kalender.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 12))!
         var e = MorgenEinstellungen()

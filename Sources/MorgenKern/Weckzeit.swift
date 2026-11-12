@@ -6,6 +6,33 @@ public struct Termin: Codable, Hashable, Sendable {
     public var start: Date
     public var ganztags: Bool
     public init(titel: String, start: Date, ganztags: Bool) { self.titel = titel; self.start = start; self.ganztags = ganztags }
+
+    /// Doppelte aus mehreren Kalendern zusammenfassen: „🎂 Johanna Griese“, „Johanna Griese (1994)“, „Johanna Griese (Geburtstag)“
+    /// am selben Tag = ein Termin; Geburtstage als „🎂 Name“
+    public static func ohneDoppelte(_ termine: [Termin]) -> [Termin] {
+        func kern(_ s: String) -> (name: String, geburtstag: Bool) {
+            let geb = s.contains("🎂") || s.range(of: "geburtstag", options: .caseInsensitive) != nil
+            var n = s.replacingOccurrences(of: #"\((\d{4}|[Gg]eburtstag)\)"#, with: "", options: .regularExpression)
+            n = n.replacingOccurrences(of: #"(?i)geburtstag( von)?"#, with: "", options: .regularExpression)
+            n = String(n.unicodeScalars.filter { CharacterSet.letters.union(.decimalDigits).union(.whitespaces).union(CharacterSet(charactersIn: "-.:&")).contains($0) })
+            return (n.split(whereSeparator: \.isWhitespace).joined(separator: " "), geb)
+        }
+        var gesehen: [String: Int] = [:]
+        var aus: [Termin] = []
+        for t in termine {
+            let (name, geb) = kern(t.titel)
+            let schluessel = Zeit.iso(t.start) + "|" + (t.ganztags ? "" : Zeit.uhrzeit(t.start)) + "|" + name.lowercased()
+            if let i = gesehen[schluessel] {
+                if geb { aus[i].titel = "🎂 " + name }
+                continue
+            }
+            gesehen[schluessel] = aus.count
+            var neu = t
+            if geb && !name.isEmpty { neu.titel = "🎂 " + name }
+            aus.append(neu)
+        }
+        return aus
+    }
 }
 
 /// Ferien oder Feiertag
