@@ -132,7 +132,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
-             mitteilungen, schulOrt, zuhauseOrt,
+             mitteilungen, vertretungMelden, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
              untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
     }
@@ -161,6 +161,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         stoerungQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .stoerungQuelle)) ?? nil
         aufgaben = w(.aufgaben, s.aufgaben); aufgabenFarbe = w(.aufgabenFarbe, s.aufgabenFarbe)
         mitteilungen = w(.mitteilungen, s.mitteilungen)
+        vertretungMelden = w(.vertretungMelden, s.vertretungMelden); mitnehmen = w(.mitnehmen, s.mitnehmen)
+        schulKalender = w(.schulKalender, s.schulKalender); gehaltErinnern = w(.gehaltErinnern, s.gehaltErinnern); gehaltTag = w(.gehaltTag, s.gehaltTag)
         schulOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .schulOrt)) ?? nil
         zuhauseOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .zuhauseOrt)) ?? nil
         schulzeiten = w(.schulzeiten, s.schulzeiten); unterricht = w(.unterricht, s.unterricht)

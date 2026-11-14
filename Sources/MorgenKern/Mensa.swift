@@ -334,9 +334,66 @@ public enum SchulKalender {
     }
 
     public static func laden(_ adresse: String) async throws -> Set<String> {
+        return tage(try await rohtext(adresse))
+    }
+
+    /// Ein benannter Termin aus einem ICS-Kalender (für schulweite Termine)
+    public struct Termin: Hashable, Sendable, Identifiable {
+        public var datum: String   // ISO-Starttag
+        public var titel: String
+        public var id: String { datum + titel }
+        public init(datum: String, titel: String) { self.datum = datum; self.titel = titel }
+    }
+
+    /// Benannte Termine ab heute, die nächsten [tage] Tage – sortiert, ohne Dubletten
+    public static func termine(_ ics: String, ab: Date = Date(), tage: Int = 45) -> [Termin] {
+        let zeilen = ics.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n ", with: "").replacingOccurrences(of: "\n\t", with: "")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+        let k = Zeit.kalender
+        let heute = k.startOfDay(for: ab)
+        let bis = k.date(byAdding: .day, value: tage, to: heute) ?? heute
+        func datum(_ w: Substring) -> Date? {
+            let z = Array(w.prefix(8))
+            guard z.count == 8, let j = Int(String(z[0..<4])), let m = Int(String(z[4..<6])), let t = Int(String(z[6..<8])) else { return nil }
+            return k.date(from: DateComponents(year: j, month: m, day: t, hour: 12))
+        }
+        var erg: [Termin] = []
+        var start: Date?, titel = ""
+        for z in zeilen {
+            guard let doppel = z.firstIndex(of: ":") else { continue }
+            let name = z[..<doppel].split(separator: ";").first.map { $0.uppercased() } ?? ""
+            let wert = String(z[z.index(after: doppel)...]).trimmingCharacters(in: .whitespaces)
+            switch name {
+            case "BEGIN" where wert == "VEVENT": start = nil; titel = ""
+            case "DTSTART": start = datum(Substring(wert))
+            case "SUMMARY": titel = wert.replacingOccurrences(of: "\\,", with: ",").replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\", with: "")
+            case "END" where wert == "VEVENT":
+                if let s = start, s >= heute, s < bis, !titel.isEmpty { erg.append(Termin(datum: Zeit.iso(s), titel: titel)) }
+            default: break
+            }
+        }
+        var gesehen = Set<String>()
+        return erg.sorted { $0.datum < $1.datum }.filter { gesehen.insert($0.id).inserted }
+    }
+
+    public static func termineLaden(_ adresse: String) async throws -> [Termin] {
+        return termine(try await rohtext(adresse))
+    }
+
+    /// ISO-Datum → „Mo, 17.11.“ (heute/morgen ausgeschrieben)
+    public static func datumText(_ iso: String, jetzt: Date = Date()) -> String {
+        let k = Zeit.kalender
+        let teile = iso.split(separator: "-").compactMap { Int($0) }
+        guard teile.count == 3, let d = k.date(from: DateComponents(year: teile[0], month: teile[1], day: teile[2], hour: 12)) else { return iso }
+        if k.isDateInToday(d) { return "heute" }
+        if k.isDateInTomorrow(d) { return "morgen" }
+        return "\(Zeit.wochentag(d).prefix(2)), \(teile[2]).\(teile[1])."
+    }
+
+    private static func rohtext(_ adresse: String) async throws -> String {
         guard let u = URL(string: adresse.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "webcal://", with: "https://")) else { throw URLError(.badURL) }
         let (d, s) = try await Netz.daten(u, zeit: 20)
         guard s == 200 else { throw URLError(.badServerResponse) }
-        return tage(String(decoding: d, as: UTF8.self))
+        return String(decoding: d, as: UTF8.self)
     }
 }

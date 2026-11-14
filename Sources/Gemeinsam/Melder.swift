@@ -5,7 +5,20 @@ import MorgenKern
 /// Mitteilungen bei neuen Störungsmeldungen und neuen bzw. verschobenen Edupool-Aufgaben.
 /// Geprüft wird beim Laden im Widget (läuft regelmäßig im Hintergrund); beim allerersten Mal wird nur gemerkt.
 enum Melder {
-    static func pruefen(stoerungen: StoerungenStand?, aufgaben: AufgabenStand?, _ d: UserDefaults = .standard) {
+    static func pruefen(stoerungen: StoerungenStand?, aufgaben: AufgabenStand?, vertretung: VertretungsPlan? = nil, _ d: UserDefaults = .standard) {
+        // Vertretungsplan betrifft mich: eine zusammengefasste Mitteilung, sobald sich meine Einträge ändern
+        if let v = vertretung, let datum = v.datum {
+            let meine = v.stunden.map { ($0.stunde.isEmpty ? "" : "\($0.stunde). ") + "Vertretung \($0.klasse)" }
+                + v.pausen.map { "\($0.reserve ? "Reserve" : "Aufsicht") \($0.pause) · \($0.ort)" }
+                + (v.fehlt ? ["Du bist als fehlend eingetragen"] : [])
+                + (v.ausserHaus ? ["Du bist außer Haus eingetragen"] : [])
+            let sig = datum + "|" + meine.sorted().joined(separator: ";")
+            let alt = d.string(forKey: "gemeldetVertretung")
+            d.set(sig, forKey: "gemeldetVertretung")
+            if let alt, alt != sig, !meine.isEmpty {
+                melde(id: "vertretung-tag", titel: "Vertretungsplan betrifft dich", text: meine.prefix(3).joined(separator: " · "), link: "gutenmorgen://vertretung")
+            }
+        }
         if let s = stoerungen {
             let jetzt = s.offen.map { $0.titel + "|" + ($0.datum.map { String(Int($0.timeIntervalSince1970)) } ?? "") }
             let neu = vergleiche(jetzt, schluessel: "gemeldetStoerungen", d)

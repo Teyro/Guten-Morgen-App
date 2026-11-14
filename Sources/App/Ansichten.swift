@@ -94,7 +94,7 @@ struct HauptAnsicht: View {
         // Sprung aus dem Widget: Speiseplan oder Vertretung gleich öffnen
         .onChange(of: kern.bereich) { _, b in
             guard let b else { return }
-            if [.mensa, .vertretung, .abwesend, .stoerungen, .aufgaben, .stundenplan, .post].contains(b) { pfad = [b] } else { pfad = [] }
+            if [.mensa, .vertretung, .abwesend, .stoerungen, .aufgaben, .stundenplan, .post, .personal].contains(b) { pfad = [b] } else { pfad = [] }
             kern.bereich = nil
         }
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
@@ -300,11 +300,18 @@ struct SchuleKarte: View {
             if e.vertretung && !e.vertretungLink.isEmpty {
                 Button { oeffne(.vertretung) } label: { VStack(alignment: .leading, spacing: 8) { vertretung(e, mitStunden: tag.isEmpty) } }.buttonStyle(.plain)
             }
+            let packen = kern.mitnehmen
+            if !packen.isEmpty {
+                Zeile(marke: "🎒", farbe: .orange, titel: (kern.schulTagName == "heute" ? "Mitnehmen" : "\(kern.schulTagName.capitalized) mitnehmen") + ": " + packen.joined(separator: ", "), unter: nil)
+            }
             if e.obstBereit && kern.obstHeute {
                 Zeile(marke: "🍎", farbe: .green, titel: kern.schulTagName == "heute" ? "Heute kommt Schulobst" : "Schulobst kommt", unter: nil)
             }
             if e.mensa {
                 Button { oeffne(.mensa) } label: { mensa(e) }.buttonStyle(.plain)
+            }
+            ForEach(kern.schulTermineBald) { t in
+                Zeile(marke: "📅", farbe: .purple, titel: t.titel, unter: SchulKalender.datumText(t.datum))
             }
             // Kinder, Störungen, Aufgaben: Zahlen-Kacheln, antippen öffnet die Liste
             let kacheln: [(Bereich, String, String, String, Color)] = [
@@ -473,6 +480,8 @@ struct EinstellungenAnsicht: View {
                 TextField("Freigabe-Link (https://…/s/…)", text: $k.einstellungen.vertretungLink).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Freigabe-Passwort (falls gesetzt)", text: $k.freigabePasswort)
                 TextField("Kürzel, z. B. Sta", text: $k.einstellungen.kuerzel).textInputAutocapitalization(.never)
+                Toggle("Mitteilung, wenn mich der Plan betrifft", isOn: $k.einstellungen.vertretungMelden)
+                    .onChange(of: kern.einstellungen.vertretungMelden) { _, an in if an { Task { _ = await Melder.erlauben() } } }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Häuser der Klassen").font(.subheadline)
                     TextEditor(text: $haeuserText).frame(minHeight: 80).font(.callout.monospaced()).textInputAutocapitalization(.never)
@@ -487,6 +496,7 @@ struct EinstellungenAnsicht: View {
                     LabeledContent("Mein Stundenplan", value: kern.einstellungen.unterricht.isEmpty ? "leer" : "\(kern.einstellungen.unterricht.count) Stunden")
                 }
                 Toggle("5 Minuten vor einer Hofaufsicht erinnern", isOn: $k.einstellungen.aufsichtErinnern)
+                Toggle("Morgen mitnehmen (Sportzeug, Regenjacke …)", isOn: $k.einstellungen.mitnehmen)
                 Toggle("Live-Aktivität im Schulalltag", isOn: $k.einstellungen.schulAktivitaet)
             } header: { Text("Schultag") } footer: { Text("Deine Stunden stehen im Briefing, im Widget „Schultag“ und – als Live-Aktivität – auf dem Sperrbildschirm, in der Dynamic Island und auf der Apple Watch: was gerade läuft, wie lange noch, was danach kommt. Vertretungen und Aufsichten aus dem Vertretungsplan kommen von selbst dazu.") }
 
@@ -653,6 +663,22 @@ struct EinstellungenAnsicht: View {
                 Toggle("Termine", isOn: $k.einstellungen.termine)
                 Toggle("Erinnerungen", isOn: $k.einstellungen.erinnerungen)
             }
+
+            Section {
+                TextField("Schulkalender (ICS- oder webcal-Link)", text: $k.einstellungen.schulKalender).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+            } header: { Text("Schultermine") } footer: { Text("Öffentlicher Kalender der Schule (z. B. aus IServ „Abonnieren“). Die kommenden Termine stehen dann in der Schul-Übersicht.") }
+
+            Section {
+                Toggle("Erinnerung an die Gehaltsabrechnung", isOn: $k.einstellungen.gehaltErinnern)
+                    .onChange(of: kern.einstellungen.gehaltErinnern) { _, an in
+                        if an { Task { _ = await Melder.erlauben() } }
+                        GehaltErinnerung.planen(an: an, tag: kern.einstellungen.gehaltTag)
+                    }
+                if kern.einstellungen.gehaltErinnern {
+                    Stepper("Am \(kern.einstellungen.gehaltTag). im Monat", value: $k.einstellungen.gehaltTag, in: 1...28)
+                        .onChange(of: kern.einstellungen.gehaltTag) { _, _ in GehaltErinnerung.planen(an: true, tag: kern.einstellungen.gehaltTag) }
+                }
+            } header: { Text("Personaldaten") } footer: { Text("Einmal im Monat eine Erinnerung, dass die neue Bezügemitteilung im Portal sein sollte – mit einem Tipp öffnet sich „Personaldaten“. Keine automatische Abfrage im Hintergrund.") }
 
             Section {
                 Button("Widget verbinden") { Task { await kern.widgetUebergeben(erzwingen: true) } }

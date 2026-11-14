@@ -61,6 +61,7 @@ final class Kern {
     var mensaPlan: MensaPlan?
     var mensaFehler = ""
     var obstTage: Set<String> = []
+    var schulTermine: [SchulKalender.Termin] = []
     /// Fahrzeit zur Schule für einen Schultag (Apple Karten), gemerkt bis zum nächsten Laden
     var fahrt: (tag: Date, minuten: Int)?
     var routineMeldung = ""
@@ -136,6 +137,12 @@ final class Kern {
 
     /// Eigener Tagesablauf des Schultags (heute, ab 16 Uhr der nächste) und von heute
     var schultag: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung, ausfall: ausfall(schulTag)) }
+    /// Wetter des Schultags (heute oder, nach 16 Uhr, morgen)
+    var wetterSchultag: WetterTag? { Zeit.kalender.isDateInToday(schulTag) ? wetter?.heute : wetter?.morgen }
+    /// „Morgen mitnehmen“: Sportzeug, Schwimmsachen, Regenjacke …
+    var mitnehmen: [String] { einstellungen.mitnehmen ? Mitnehmen.hinweise(schultag, wetter: wetterSchultag) : [] }
+    /// Kommende Schultermine (aus dem abonnierten Kalender)
+    var schulTermineBald: [SchulKalender.Termin] { Array(schulTermine.prefix(4)) }
     var schultagGanz: [Block] { einstellungen.schultag(schulTag, vertretung: vertretung, ausfall: ausfall(schulTag), ganz: true) }
     var heuteBloecke: [Block] { freiHeute == nil ? einstellungen.schultag(Date(), vertretung: vertretung, ausfall: ausfall(Date())) : [] }
     /// Ausgefallene eigene Stunden laut WebUntis an einem Tag
@@ -251,6 +258,7 @@ final class Kern {
             ? await versuch { try await Mensa.ladePlan(adresse: e.mensaAdresse, benutzer: e.mensaBenutzer, passwort: mpw) } : nil
         async let s: TimeInterval? = e.gesundheit ? await Gesundheit.schlafLetzteNacht() : nil
         async let o: Set<String>? = e.obstBereit ? try? await SchulKalender.laden(e.obstKalender) : nil
+        async let st: [SchulKalender.Termin]? = !e.schulKalender.isEmpty ? try? await SchulKalender.termineLaden(e.schulKalender) : nil
         switch await v {
         case .success(let p)?: vertretung = p; vertretungFehler = ""
         case .failure(let f)?: vertretungFehler = (f as? URLError)?.code == .userAuthenticationRequired ? "Freigabe-Passwort fehlt oder stimmt nicht" : "Vertretungsplan nicht erreichbar"
@@ -265,6 +273,7 @@ final class Kern {
             mensaFehler = e.mensa && mpw.isEmpty ? "Kantinen-Passwort fehlt" : !mensaErlaubt ? "Kantinen-Zugang wurde abgelehnt – bitte Benutzer oder Passwort prüfen" : ""
         }
         if let tage = await o { obstTage = tage } else if !e.obstBereit { obstTage = [] }
+        if let t = await st { schulTermine = t } else if e.schulKalender.isEmpty { schulTermine = [] }
         schlaf = await s
         if e.schulOrt != nil || e.zuhauseOrt != nil { _ = await ortung.einmal() }
         unterwegs = e.unterwegs(hier: ortung.ort)
@@ -287,7 +296,7 @@ final class Kern {
         d.schulTag = schulTag; d.schlaf = schlaf
         d.mensaWahl = (einstellungen.favoriten, einstellungen.meiden)
         d.gemerkt = (einstellungen.lieblingsGerichte, einstellungen.nichtLecker)
-        d.schultag = schultag
+        d.schultag = schultag; d.mitnehmen = einstellungen.mitnehmen
         d.anfahrt = anfahrtText
         d.auto = einstellungen.fahrt && einstellungen.fahrtArt == "auto"
         return Briefing.morgen(d)
@@ -430,7 +439,12 @@ final class Kern {
                 d.set(Date().timeIntervalSince1970, forKey: "aufgabenGeladen")
             } catch { aufgabenFehler = error.localizedDescription }
         }
-        if e.mitteilungen { Melder.pruefen(stoerungen: e.stoerungen ? stoerungen : nil, aufgaben: e.aufgaben ? aufgaben : nil) }
+        if e.mitteilungen || e.vertretungMelden {
+            Melder.pruefen(stoerungen: e.mitteilungen && e.stoerungen ? stoerungen : nil,
+                           aufgaben: e.mitteilungen && e.aufgaben ? aufgaben : nil,
+                           vertretung: e.vertretungMelden ? vertretung : nil)
+        }
+        GehaltErinnerung.planen(an: e.gehaltErinnern, tag: e.gehaltTag)
         await untisLaden(erzwingen: erzwingen)
     }
 

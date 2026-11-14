@@ -1,7 +1,25 @@
 import SwiftUI
 import WebKit
 import QuickLook
+import UserNotifications
 import MorgenKern
+
+/// Erinnerung, dass eine neue Bezügemitteilung im Portal sein sollte – einmal im Monat am gewählten Tag.
+enum GehaltErinnerung {
+    static let id = "gehalt-erinnerung"
+    static func planen(an: Bool, tag: Int) {
+        let c = UNUserNotificationCenter.current()
+        c.removePendingNotificationRequests(withIdentifiers: [id])
+        guard an else { return }
+        var comp = DateComponents(); comp.day = min(max(tag, 1), 28); comp.hour = 16
+        let inhalt = UNMutableNotificationContent()
+        inhalt.title = "Gehaltsabrechnung"
+        inhalt.body = "Die neue Bezügemitteilung sollte jetzt im Portal sein. Zum Öffnen tippen."
+        inhalt.sound = .default
+        inhalt.userInfo = ["link": "gutenmorgen://personal"]
+        c.add(UNNotificationRequest(identifier: id, content: inhalt, trigger: UNCalendarNotificationTrigger(dateMatching: comp, repeats: true)))
+    }
+}
 
 /// Ordner der gespeicherten Dokumente (Gehaltsabrechnungen, Bescheinigungen) – nur auf diesem Gerät, geschützt
 enum PersonalAblage {

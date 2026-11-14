@@ -23,6 +23,8 @@ public struct BriefingDaten: Sendable {
     public var erledigt: [String] = []
     /// Eigener Tagesablauf des Schultags (leer = kein Stundenplan eingetragen)
     public var schultag: [Block] = []
+    /// „Morgen mitnehmen“ im Briefing nennen
+    public var mitnehmen = false
     /// „Losfahren um 7 Uhr 12, 23 Minuten mit dem Auto.“
     public var anfahrt = ""
     /// Mit dem Auto unterwegs (für „Scheibe kratzen“)
@@ -83,6 +85,10 @@ public enum Briefing {
             // Stundenplan enthält Vertretungen und Aufsichten schon – nur „fehlend“/„außer Haus“ extra
             if let v = d.vertretung, v.fehlt || v.ausserHaus { schule.append(v.fehlt ? "Du bist als fehlend eingetragen." : "Du bist außer Haus eingetragen.") }
             schule.append(Stundenplan.satz(d.schultag))
+            if d.mitnehmen {
+                let satz = Mitnehmen.satz(d.schultag, wetter: schuleHeute ? d.wetter?.heute : d.wetter?.morgen, wann: "")
+                if !satz.isEmpty { schule.append(satz) }
+            }
         } else if let v = d.vertretung, schultag, v.datum == nil || v.datum == Zeit.iso(tag) { schule.append(v.satz(haeuser: d.haeuser)) }
         if schultag && d.obst { schule.append(schuleHeute ? "Heute kommt Schulobst." : "Es kommt Schulobst.") }
         if let m = d.mensa, schultag, m.datum == Zeit.iso(tag) {
