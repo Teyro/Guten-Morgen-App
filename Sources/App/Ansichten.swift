@@ -46,6 +46,8 @@ struct HauptAnsicht: View {
                         Button { pfad = [.aufgaben] } label: { Label("Aufgaben", systemImage: "checklist") }
                         Button { pfad = [.abwesend] } label: { Label("Abwesenheiten", systemImage: "person.crop.circle.badge.xmark") }
                         Divider()
+                        Button { pfad = [.personal] } label: { Label("Personaldaten", systemImage: "person.text.rectangle") }
+                        Divider()
                         Button { kern.einstellungenOffen = true } label: { Label("Einstellungen", systemImage: "gearshape") }
                     } label: { Label("Menü", systemImage: "line.3.horizontal") }
                 }
@@ -61,6 +63,7 @@ struct HauptAnsicht: View {
                 case .abwesend: AbwesendAnsicht(kern: kern)
                 case .stoerungen: StoerungenAnsicht(kern: kern)
                 case .aufgaben: AufgabenAnsicht(kern: kern)
+                case .personal: PersonaldatenAnsicht()
                 default: VertretungAnsicht(kern: kern)
                 }
             }
