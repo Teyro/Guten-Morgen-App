@@ -213,6 +213,8 @@ struct PortalWeb: UIViewRepresentable {
                 melde("Meldet an …")
                 w.evaluateJavaScript(Personaldaten.anmeldeSkript(email: PersonalZugang.email, passwort: PersonalZugang.passwort))
             } else if host.contains("meinepersonaldaten.hamburg.de") {
+                // Angemeldet (geschützter Bereich): Zähler zurücksetzen, damit eine spätere Wiederanmeldung (Sitzung abgelaufen) wieder klappt
+                if url.path.contains("/private") { versuche = 0; melde(""); return }
                 // OTP-Seite erkennen (Feld „token“) und den Code der Sekunde eintragen
                 w.evaluateJavaScript("document.getElementById('token') != null && document.getElementById('loginForm') != null") { r, _ in
                     guard (r as? Bool) == true else { self.melde(""); return }
@@ -242,6 +244,8 @@ struct PortalWeb: UIViewRepresentable {
 
         func downloadDidFinish(_ d: WKDownload) {
             guard let u = ziele.removeValue(forKey: ObjectIdentifier(d)) else { return }
+            // Gehaltsdaten: vollständige iOS-Verschlüsselung (nur lesbar, wenn das Gerät entsperrt ist)
+            try? (u as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
             melde("Gespeichert: \(u.lastPathComponent)")
             DispatchQueue.main.async { self.eltern.gespeichert(u) }
         }
