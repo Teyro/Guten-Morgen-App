@@ -21,6 +21,16 @@ extension View {
             self.background(farbe.gradient, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
         }
     }
+
+    /// Glas-Verbund wie in Apples Apps: die einzelnen Glasflächen darin tasten sich gemeinsam ab und verschmelzen
+    /// beim Scrollen weich ineinander. Auf iOS 17 unverändert.
+    @ViewBuilder func glasVerbund(_ abstand: CGFloat = 14) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: abstand) { self }
+        } else {
+            self
+        }
+    }
 }
 
 /// Farben wie das Kantinen-Skript (Design „kantine“: warmes Dunkelbraun, Orange)

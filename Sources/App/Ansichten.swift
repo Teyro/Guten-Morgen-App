@@ -26,6 +26,7 @@ struct HauptAnsicht: View {
                     }
                     knoepfe
                 }
+                .glasVerbund(14)
                 .padding()
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
