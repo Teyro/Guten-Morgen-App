@@ -385,8 +385,9 @@ public enum SchulKalender {
         let k = Zeit.kalender
         let teile = iso.split(separator: "-").compactMap { Int($0) }
         guard teile.count == 3, let d = k.date(from: DateComponents(year: teile[0], month: teile[1], day: teile[2], hour: 12)) else { return iso }
-        if k.isDateInToday(d) { return "heute" }
-        if k.isDateInTomorrow(d) { return "morgen" }
+        let tage = k.dateComponents([.day], from: k.startOfDay(for: jetzt), to: k.startOfDay(for: d)).day ?? 99
+        if tage == 0 { return "heute" }
+        if tage == 1 { return "morgen" }
         return "\(Zeit.wochentag(d).prefix(2)), \(teile[2]).\(teile[1])."
     }
 
