@@ -83,6 +83,16 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var aufgabenFarbe = "#76a5af"
     /// Mitteilungen bei neuen Störungsmeldungen und neuen/verschobenen Aufgaben
     public var mitteilungen = false
+    /// Mitteilung, wenn der Vertretungsplan mich betrifft (Vertretung/Aufsicht/fehlend)
+    public var vertretungMelden = false
+    /// „Morgen mitnehmen“: Sport-/Schwimmsachen aus dem Stundenplan + Wetter
+    public var mitnehmen = true
+    /// Schulweiter Kalender (ICS/webcal) – zeigt kommende Schultermine
+    public var schulKalender = ""
+    /// Erinnerung, dass eine neue Bezügemitteilung im Portal sein sollte
+    public var gehaltErinnern = false
+    /// Tag im Monat für die Gehaltserinnerung
+    public var gehaltTag = 28
     /// Orte für die Anordnung (Schule zuerst bzw. Termine und Post zuerst)
     public var schulOrt: Kontext.Ort?
     public var zuhauseOrt: Kontext.Ort?
