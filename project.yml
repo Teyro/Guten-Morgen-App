@@ -33,6 +33,9 @@ targets:
       - target: GutenMorgenWidget
         embed: true
         codeSign: true
+      - target: GutenMorgen-Uhr
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_NAME: GutenMorgen
