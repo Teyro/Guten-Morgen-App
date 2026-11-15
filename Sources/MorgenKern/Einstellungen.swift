@@ -57,7 +57,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var obst = false
     public var obstKalender = ""
     /// Farbton von App und Widget (siehe Farbton im App-Teil)
-    public var farbton = "morgenrot"
+    public var farbton = "system"
     /// Kantine: Stichwörter für Lieblingsessen und zum Meiden (wie im Kantinen-Widget)
     public var favoriten = ""
     public var meiden = ""

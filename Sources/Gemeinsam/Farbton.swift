@@ -10,8 +10,14 @@ struct Farbton: Identifiable, Hashable {
     /// Widget-Hintergrund (immer kräftig, weiße Schrift)
     let widget: [Color]
     let akzent: Color
+    /// Apple-Standard: flacher System-Hintergrund statt Farbverlauf (passt zu Liquid Glass wie in Apples Apps)
+    var systemGrund: Bool = false
 
     static let alle: [Farbton] = [
+        Farbton(id: "system", name: "System (wie Apple)",
+                hell: [Color(red: 0.95, green: 0.95, blue: 0.97), Color(red: 0.95, green: 0.95, blue: 0.97)],
+                dunkel: [Color(red: 0.07, green: 0.07, blue: 0.08), Color(red: 0.07, green: 0.07, blue: 0.08)],
+                widget: [Color(red: 0.0, green: 0.3, blue: 0.7), Color(red: 0.1, green: 0.55, blue: 0.95)], akzent: .blue, systemGrund: true),
         Farbton(id: "morgenrot", name: "Morgenrot",
                 hell: [Color(red: 1, green: 0.94, blue: 0.86), Color(red: 0.95, green: 0.93, blue: 1)],
                 dunkel: [Color(red: 0.09, green: 0.08, blue: 0.18), Color(red: 0.2, green: 0.1, blue: 0.16)],

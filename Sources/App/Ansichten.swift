@@ -164,7 +164,12 @@ struct Hintergrund: View {
     var farbton: Farbton = Farbton.alle[0]
     @Environment(\.colorScheme) private var schema
     var body: some View {
-        LinearGradient(colors: schema == .dark ? farbton.dunkel : farbton.hell, startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        if farbton.systemGrund {
+            // Apple-Standard: der neutrale System-Hintergrund, über den das Glas wie in Apples Apps liegt
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+        } else {
+            LinearGradient(colors: schema == .dark ? farbton.dunkel : farbton.hell, startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        }
     }
 }
 
