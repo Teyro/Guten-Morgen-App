@@ -29,6 +29,8 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           APP=build/sim/Build/Products/Debug-iphonesimulator/GutenMorgen.app
           test -d "$APP"
+          # Der iOS-Simulator kann keine App mit eingebetteter Watch-App installieren – für die Screenshots die Watch-Inhalte entfernen (die echte IPA behält sie)
+          rm -rf "$APP/Watch"
           GERAET=$(xcrun simctl list devices available -j | node -e 'const d=JSON.parse(require("fs").readFileSync(0)).devices;const l=Object.entries(d).filter(([k])=>k.includes("iOS")).flatMap(([,v])=>v).filter(x=>/^iPhone \d+( Pro)?$/.test(x.name));console.log((l.find(x=>/Pro$/.test(x.name))||l[0]).udid)')
           xcrun simctl boot "$GERAET"
           xcrun simctl bootstatus "$GERAET" -b
