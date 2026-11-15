@@ -39,6 +39,10 @@ final class UhrZustand: NSObject, WCSessionDelegate {
     nonisolated func session(_ s: WCSession, didReceiveApplicationContext k: [String: Any]) {
         Task { @MainActor in self.uebernehmen(k) }
     }
+    #if os(iOS)
+    nonisolated func sessionDidBecomeInactive(_ s: WCSession) {}
+    nonisolated func sessionDidDeactivate(_ s: WCSession) { s.activate() }
+    #endif
 
     private func uebernehmen(_ k: [String: Any]) {
         guard let d = k["paket"] as? Data, let p = try? JSONDecoder().decode(UhrPaket.self, from: d) else { return }
