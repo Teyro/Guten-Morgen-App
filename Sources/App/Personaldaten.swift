@@ -1,8 +1,110 @@
 import SwiftUI
 import WebKit
+import UIKit
 import QuickLook
 import UserNotifications
 import MorgenKern
+
+/// Täglicher Abruf (Mo–Fr, zufällig 11–15 Uhr): meldet sich im unsichtbaren WebView an und lädt eine neue Abrechnung,
+/// falls das Portal auf der Startseite einen Link darauf zeigt (Bezüge/Entgelt/Abrechnung). Nur Links, die das Portal
+/// selbst anbietet – keine automatisierte Dauerabfrage, einmal am Tag.
+@MainActor final class GehaltDienst: NSObject, WKNavigationDelegate, WKDownloadDelegate {
+    static let shared = GehaltDienst()
+    private var web: WKWebView?
+    private var ziele: [ObjectIdentifier: URL] = [:]
+    private var versuche = 0
+    private var dokumentGesucht = false
+    private var aufraeumen: DispatchWorkItem?
+
+    /// Wenn fällig und eingerichtet: still abrufen. [jetzt] nur für Tests.
+    func pruefen(_ jetzt: Date = Date()) {
+        let d = UserDefaults.standard
+        guard PersonalZugang.vollstaendig, web == nil else { return }
+        guard GehaltAbruf.faellig(jetzt, letzterTag: d.string(forKey: "gehaltAbrufTag") ?? "") else { return }
+        d.set(Zeit.iso(jetzt), forKey: "gehaltAbrufTag")   // nur einmal am Tag, auch bei Fehlschlag
+        starten()
+    }
+
+    private func starten() {
+        versuche = 0; dokumentGesucht = false
+        let c = WKWebViewConfiguration(); c.websiteDataStore = .default()
+        let w = WKWebView(frame: .zero, configuration: c)
+        w.navigationDelegate = self
+        // unsichtbar in das aktuelle Fenster hängen – sonst führt WKWebView kein JS aus
+        if let fenster = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first {
+            w.isHidden = true; w.frame = .zero; fenster.addSubview(w)
+        }
+        web = w
+        let abbruch = DispatchWorkItem { [weak self] in self?.beenden() }
+        aufraeumen = abbruch
+        DispatchQueue.main.asyncAfter(deadline: .now() + 50, execute: abbruch)
+        w.load(URLRequest(url: Personaldaten.start))
+    }
+
+    private func beenden() {
+        aufraeumen?.cancel(); aufraeumen = nil
+        web?.removeFromSuperview(); web = nil
+    }
+
+    private func melde(_ titel: String, _ text: String) {
+        let c = UNMutableNotificationContent(); c.title = titel; c.body = text; c.sound = .default
+        c.userInfo = ["link": "gutenmorgen://personal"]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "gehalt-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
+    }
+
+    func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let url = w.url else { return }
+        let host = url.host ?? ""
+        if host.contains("idp.serviceportal.hamburg.de"), url.path.contains("ShowLogin") {
+            guard versuche < 2 else { beenden(); return }; versuche += 1
+            w.evaluateJavaScript(Personaldaten.anmeldeSkript(email: PersonalZugang.email, passwort: PersonalZugang.passwort))
+        } else if host.contains("meinepersonaldaten.hamburg.de") {
+            if url.path.contains("/private") {
+                guard !dokumentGesucht else { return }
+                dokumentGesucht = true
+                // nach einem Link suchen, den das Portal selbst zeigt
+                let suche = "(function(){var r=/bez(ü|ue)g|entgelt|abrechnung|mitteilung|gehalt/i;" +
+                    "for(var a of document.querySelectorAll('a,button')){var t=(a.textContent||'')+' '+(a.getAttribute('href')||'');" +
+                    "if(r.test(t)){if(a.href)return a.href; a.click(); return 'klick';}}return '';})();"
+                w.evaluateJavaScript(suche) { r, _ in
+                    if let s = r as? String, s.hasPrefix("http"), let u = URL(string: s) { w.load(URLRequest(url: u)) }
+                    else if (r as? String) != "klick" {
+                        // nichts gefunden – nach kurzer Wartezeit aufgeben
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if self?.ziele.isEmpty == true { self?.beenden() } }
+                    }
+                }
+            } else if w.url?.path.contains("login2fa") == false {
+                w.evaluateJavaScript("document.getElementById('token') != null") { r, _ in
+                    guard (r as? Bool) == true, self.versuche < 4 else { return }
+                    self.versuche += 1
+                    w.evaluateJavaScript(Personaldaten.otpSkript(code: IServ.totp(PersonalZugang.geheimnis)))
+                }
+            }
+        }
+    }
+
+    func webView(_ w: WKWebView, decidePolicyFor r: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let mime = r.response.mimeType?.lowercased() ?? ""
+        let anhang = ((r.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? "").lowercased().contains("attachment")
+        decisionHandler(mime == "application/pdf" || anhang ? .download : .allow)
+    }
+    func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { download.delegate = self }
+    func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { download.delegate = self }
+    func download(_ d: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let vorher = Set(PersonalAblage.dateien().map(\.lastPathComponent))
+        let ziel = PersonalAblage.ziel(fuer: suggestedFilename)
+        ziele[ObjectIdentifier(d)] = ziel
+        UserDefaults.standard.set(Array(vorher), forKey: "gehaltVorher")
+        completionHandler(ziel)
+    }
+    func downloadDidFinish(_ d: WKDownload) {
+        guard let u = ziele.removeValue(forKey: ObjectIdentifier(d)) else { return }
+        try? (u as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
+        melde("Neue Abrechnung", u.deletingPathExtension().lastPathComponent)
+        beenden()
+    }
+    func download(_ d: WKDownload, didFailWithError error: Error, resumeData: Data?) { ziele.removeValue(forKey: ObjectIdentifier(d)); beenden() }
+}
 
 /// Erinnerung, dass eine neue Bezügemitteilung im Portal sein sollte – einmal im Monat am gewählten Tag.
 enum GehaltErinnerung {

@@ -2,6 +2,18 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MorgenKern
 
+/// Verschiebbare Kacheln auf dem Startbildschirm (Kopf und Knöpfe bleiben fest)
+enum Kachel: String, CaseIterable, Identifiable {
+    case wecker, schule, wetter, termine, post
+    var id: String { rawValue }
+    var name: String {
+        switch self { case .wecker: "Wecker"; case .schule: "Schule"; case .wetter: "Wetter"; case .termine: "Termine & Erinnerungen"; case .post: "Post & Pakete" }
+    }
+    var symbol: String {
+        switch self { case .wecker: "alarm.fill"; case .schule: "graduationcap.fill"; case .wetter: "cloud.sun.fill"; case .termine: "calendar"; case .post: "shippingbox.fill" }
+    }
+}
+
 struct HauptAnsicht: View {
     @Bindable var kern: Kern
     @Environment(\.scenePhase) private var phase
@@ -13,17 +25,8 @@ struct HauptAnsicht: View {
             ScrollView {
                 VStack(spacing: 14) {
                     kopf
-                    WeckerKarte(kern: kern)
-                    // In der Schule: Schule zuerst; zu Hause und am Wochenende: Termine und Post zuerst
-                    if kern.kontext == .schule {
-                        if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
-                        if let w = kern.wetter { WetterKarte(wetter: w) }
-                        termineUndPost
-                    } else {
-                        termineUndPost
-                        if let w = kern.wetter { WetterKarte(wetter: w) }
-                        if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
-                    }
+                    // Reihenfolge: eigene (Einstellungen → Kacheln anordnen) oder automatisch je nach Kontext
+                    ForEach(kachelOrdnung) { k in kachel(k) }
                     knoepfe
                 }
                 .glasVerbund(14)
@@ -91,25 +94,40 @@ struct HauptAnsicht: View {
                 }
             }
         }
-        .task { await kern.aktualisieren() }
+        .task { await kern.aktualisieren(); if kern.einstellungen.gehaltAuto { GehaltDienst.shared.pruefen() } }
         // Sprung aus dem Widget: Speiseplan oder Vertretung gleich öffnen
         .onChange(of: kern.bereich) { _, b in
             guard let b else { return }
             if [.mensa, .vertretung, .abwesend, .stoerungen, .aufgaben, .stundenplan, .post, .personal].contains(b) { pfad = [b] } else { pfad = [] }
             kern.bereich = nil
         }
-        .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() } } }
+        .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() }; if kern.einstellungen.gehaltAuto { GehaltDienst.shared.pruefen() } } }
     }
 
-    @ViewBuilder private var termineUndPost: some View {
+    /// Reihenfolge der Kacheln: eigene aus den Einstellungen, sonst automatisch (in der Schule Schule zuerst)
+    private var kachelOrdnung: [Kachel] {
+        let eigen = kern.einstellungen.kachelReihenfolge.compactMap(Kachel.init(rawValue:))
+        if !eigen.isEmpty { return eigen + Kachel.allCases.filter { !eigen.contains($0) } }
+        return kern.kontext == .schule ? [.wecker, .schule, .wetter, .termine, .post] : [.wecker, .termine, .post, .wetter, .schule]
+    }
+
+    @ViewBuilder private func kachel(_ k: Kachel) -> some View {
+        switch k {
+        case .wecker: WeckerKarte(kern: kern)
+        case .schule: if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
+        case .wetter: if let w = kern.wetter { WetterKarte(wetter: w) }
+        case .termine: termineKarte
+        case .post: if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
+        }
+    }
+
+    @ViewBuilder private var termineKarte: some View {
         if kern.einstellungen.termine {
-            // zu Hause und am Wochenende auch die nächsten Tage
             let k = Zeit.kalender
             let bis = k.date(byAdding: .day, value: kern.kontext == .schule ? 1 : 3, to: k.startOfDay(for: Date())) ?? Date()
             TermineKarte(termine: kern.termine.filter { $0.start < bis && ($0.ganztags || $0.start > Date().addingTimeInterval(-1800)) },
                          erinnerungen: kern.erinnerungen, mehrereTage: kern.kontext != .schule)
         }
-        if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
     }
 
     /// Schul-Karte nur, wenn etwas davon eingerichtet ist
@@ -417,6 +435,12 @@ struct EinstellungenAnsicht: View {
     @Environment(\.openURL) private var oeffneURL
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
+    /// Aktuelle Kachel-Reihenfolge zum Anordnen (bei „automatisch“ die Standardreihenfolge)
+    private var kachelOrdnungEinstellung: [Kachel] {
+        let eigen = kern.einstellungen.kachelReihenfolge.compactMap(Kachel.init(rawValue:))
+        return eigen.isEmpty ? Kachel.allCases : eigen + Kachel.allCases.filter { !eigen.contains($0) }
+    }
+
     var body: some View {
         @Bindable var k = kern
         Form {
@@ -480,6 +504,15 @@ struct EinstellungenAnsicht: View {
                 .onDelete { k.einstellungen.nacht.remove(atOffsets: $0) }
                 Button("Aktion für „Gute Nacht“ hinzufügen") { k.einstellungen.nacht.append(HAAktion(name: "Neue Aktion", dienst: "light.turn_off", ziel: "all")) }
             } header: { Text("Home Assistant") } footer: { Text("Token: in Home Assistant unten links auf deinen Namen → Sicherheit → Langlebige Zugriffstoken. Post kommt aus der Integration „Briefankündigung“.") }
+
+            Section {
+                TextField("Nachtlampe, z. B. light.kinderzimmer", text: $k.einstellungen.nachtlampe).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if !kern.einstellungen.nachtlampe.isEmpty {
+                    Stepper("Helligkeit \(kern.einstellungen.nachtlampeHelligkeit) %", value: $k.einstellungen.nachtlampeHelligkeit, in: 1...100, step: 5)
+                }
+                TextField(kern.einstellungen.nachtGeschichteKurzbefehl ? "Name des Kurzbefehls" : "Spotify-Link (Playlist/Album)", text: $k.einstellungen.nachtGeschichte).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Toggle("Geschichte über einen Kurzbefehl starten", isOn: $k.einstellungen.nachtGeschichteKurzbefehl)
+            } header: { Text("Gute Nacht") } footer: { Text("„Gute Nacht“ schaltet zuerst deine Aktionen oben (z. B. alle Lichter aus), lässt dann die Nachtlampe gedimmt an und spielt die Geschichte. Für eine zufällige Bibi-und-Tina-Folge eine Playlist als Spotify-Link eintragen (Spotify spielt sie gemischt). Für „30 Minuten, dann aus“ einen Kurzbefehl anlegen, der die Folge startet und einen 30-Minuten-Timer stellt, und hier dessen Namen eintragen.") }
 
             Section {
                 Toggle("Vertretungsplan", isOn: $k.einstellungen.vertretung)
@@ -675,6 +708,11 @@ struct EinstellungenAnsicht: View {
             } header: { Text("Schultermine") } footer: { Text("Öffentlicher Kalender der Schule (z. B. aus IServ „Abonnieren“). Die kommenden Termine stehen dann in der Schul-Übersicht.") }
 
             Section {
+                Toggle("Abrechnung automatisch abrufen", isOn: $k.einstellungen.gehaltAuto)
+                    .onChange(of: kern.einstellungen.gehaltAuto) { _, an in
+                        if an { Task { _ = await Melder.erlauben() } }
+                        GehaltErinnerung.planen(an: false, tag: 0)   // alte monatliche Erinnerung abschalten
+                    }
                 Toggle("Erinnerung an die Gehaltsabrechnung", isOn: $k.einstellungen.gehaltErinnern)
                     .onChange(of: kern.einstellungen.gehaltErinnern) { _, an in
                         if an { Task { _ = await Melder.erlauben() } }
@@ -684,7 +722,19 @@ struct EinstellungenAnsicht: View {
                     Stepper("Am \(kern.einstellungen.gehaltTag). im Monat", value: $k.einstellungen.gehaltTag, in: 1...28)
                         .onChange(of: kern.einstellungen.gehaltTag) { _, _ in GehaltErinnerung.planen(an: true, tag: kern.einstellungen.gehaltTag) }
                 }
-            } header: { Text("Personaldaten") } footer: { Text("Einmal im Monat eine Erinnerung, dass die neue Bezügemitteilung im Portal sein sollte – mit einem Tipp öffnet sich „Personaldaten“. Keine automatische Abfrage im Hintergrund.") }
+            } header: { Text("Personaldaten") } footer: { Text("„Automatisch abrufen“: einmal am Tag (Mo–Fr, zufällig zwischen 11 und 15 Uhr), während die App vorne ist, meldet sie sich still im Portal an und lädt eine neue Abrechnung, falls das Portal eine zeigt. Dein Konto wird nicht laufend abgefragt. Alternativ nur eine monatliche Erinnerung.") }
+
+            Section {
+                ForEach(kachelOrdnungEinstellung) { kc in Label(kc.name, systemImage: kc.symbol) }
+                    .onMove { from, to in
+                        var arr = kachelOrdnungEinstellung.map(\.rawValue)
+                        arr.move(fromOffsets: from, toOffset: to)
+                        k.einstellungen.kachelReihenfolge = arr
+                    }
+                if !kern.einstellungen.kachelReihenfolge.isEmpty {
+                    Button("Automatische Reihenfolge") { k.einstellungen.kachelReihenfolge = [] }
+                }
+            } header: { HStack { Text("Kacheln anordnen"); Spacer(); EditButton() } } footer: { Text("Ziehen zum Verschieben. „Automatisch“: in der Schule steht die Schule oben, zu Hause und am Wochenende Termine und Post.") }
 
             Section {
                 Button("Widget verbinden") { Task { await kern.widgetUebergeben(erzwingen: true) } }

@@ -136,10 +136,13 @@ final class Weckmusik {
     }
 
     /// spotify:… bzw. https://open.spotify.com/… → spotify:typ:id; Kurzbefehl → shortcuts://run-shortcut?name=…
-    var fremdeURL: URL? {
+    var fremdeURL: URL? { Weckmusik.fremdeURL(link: link, kurzbefehl: quelle == .kurzbefehl) }
+
+    /// Link zu einer Start-URL: Spotify-Link → spotify:typ:id (öffnet in Spotify), Kurzbefehl → shortcuts://run-shortcut
+    static func fremdeURL(link: String, kurzbefehl: Bool) -> URL? {
         let l = link.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !l.isEmpty else { return nil }
-        if quelle == .kurzbefehl { return URL(string: "shortcuts://run-shortcut?name=" + (l.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? l)) }
+        if kurzbefehl { return URL(string: "shortcuts://run-shortcut?name=" + (l.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? l)) }
         if l.hasPrefix("spotify:") { return URL(string: l) }
         if let u = URL(string: l), u.host?.contains("spotify.com") == true {
             let teile = u.path.split(separator: "/").map(String.init).filter { !$0.hasPrefix("intl-") }

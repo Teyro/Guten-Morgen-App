@@ -40,4 +40,20 @@ final class FunktionenTests: XCTestCase {
         XCTAssertEqual(SchulKalender.datumText("2026-11-15", jetzt: ab), "morgen")
         XCTAssertEqual(SchulKalender.datumText("2026-11-14", jetzt: ab), "heute")
     }
+func testGehaltAbruf() {
+        let k = Zeit.kalender
+        // Zielminute ist stabil je Tag und liegt zwischen 11:00 und 15:00
+        let tag = k.date(from: DateComponents(year: 2026, month: 11, day: 16, hour: 12))!
+        let z = GehaltAbruf.zielMinute(tag)
+        XCTAssertTrue(z >= 660 && z <= 900)
+        XCTAssertEqual(z, GehaltAbruf.zielMinute(k.date(from: DateComponents(year: 2026, month: 11, day: 16, hour: 8))!))
+        // Montag vor der Zielzeit: nicht fällig; danach schon; am Samstag nie
+        let vor = k.date(bySettingHour: (z-1)/60, minute: (z-1)%60, second: 0, of: tag)!   // 16.11.2026 ist ein Montag
+        let nach = k.date(bySettingHour: (z+1)/60, minute: (z+1)%60, second: 0, of: tag)!
+        XCTAssertFalse(GehaltAbruf.faellig(vor, letzterTag: ""))
+        XCTAssertTrue(GehaltAbruf.faellig(nach, letzterTag: ""))
+        XCTAssertFalse(GehaltAbruf.faellig(nach, letzterTag: "2026-11-16")) // heute schon
+        let samstag = k.date(from: DateComponents(year: 2026, month: 11, day: 21, hour: 13))!
+        XCTAssertFalse(GehaltAbruf.faellig(samstag, letzterTag: ""))
+    }
 }

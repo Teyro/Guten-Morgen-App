@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import SwiftUI
 import WidgetKit
 import MorgenKern
@@ -321,6 +322,15 @@ final class Kern {
             for a in (unterwegs ? einstellungen.unterwegsAktionen : einstellungen.nacht) { if await ha.ausfuehren(a) { d.erledigt.append(a.name) } }
             if !unterwegs { d.offeneFenster = await ha.offeneFenster() }
             if unterwegs && !einstellungen.routine.isEmpty { await ha.weckzeitMelden(nil) }
+            // Nachtlampe anlassen/dimmen, nachdem alles andere ausgegangen ist (nur zu Hause)
+            if !unterwegs, !einstellungen.nachtlampe.isEmpty, await ha.nachtlampe(einstellungen.nachtlampe, helligkeit: einstellungen.nachtlampeHelligkeit) {
+                d.erledigt.append("Nachtlampe an")
+            }
+        }
+        // Gute-Nacht-Geschichte (z. B. zufällige Bibi-und-Tina-Folge über Spotify oder einen Kurzbefehl)
+        if !vorschau, !einstellungen.nachtGeschichte.isEmpty,
+           let u = Weckmusik.fremdeURL(link: einstellungen.nachtGeschichte, kurzbefehl: einstellungen.nachtGeschichteKurzbefehl) {
+            await MainActor.run { UIApplication.shared.open(u) }
         }
         if !vorschau { termine = kalender.termine(von: Zeit.kalender.startOfDay(for: Date()), tage: 3) }
         d.wecker = naechsterWecker

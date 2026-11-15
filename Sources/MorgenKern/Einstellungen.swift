@@ -91,8 +91,18 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var schulKalender = ""
     /// Erinnerung, dass eine neue Bezügemitteilung im Portal sein sollte
     public var gehaltErinnern = false
-    /// Tag im Monat für die Gehaltserinnerung
+    /// Tag im Monat für die Gehaltserinnerung (alt)
     public var gehaltTag = 28
+    /// Gehaltsabrechnung einmal täglich automatisch abrufen (zufällig 11–15 Uhr, Mo–Fr)
+    public var gehaltAuto = false
+    /// Eigene Reihenfolge der Kacheln auf dem Startbildschirm (leer = automatisch)
+    public var kachelReihenfolge: [String] = []
+    /// Gute Nacht: HA-Nachtlampe, die anbleibt (gedimmt), während alles andere ausgeht
+    public var nachtlampe = ""
+    public var nachtlampeHelligkeit = 15
+    /// Gute Nacht: Geschichte (Spotify-Link oder Kurzbefehl), z. B. eine Bibi-und-Tina-Playlist
+    public var nachtGeschichte = ""
+    public var nachtGeschichteKurzbefehl = false
     /// Orte für die Anordnung (Schule zuerst bzw. Termine und Post zuerst)
     public var schulOrt: Kontext.Ort?
     public var zuhauseOrt: Kontext.Ort?
@@ -142,7 +152,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
-             mitteilungen, vertretungMelden, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, schulOrt, zuhauseOrt,
+             mitteilungen, vertretungMelden, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
              untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
     }
@@ -173,6 +183,9 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         mitteilungen = w(.mitteilungen, s.mitteilungen)
         vertretungMelden = w(.vertretungMelden, s.vertretungMelden); mitnehmen = w(.mitnehmen, s.mitnehmen)
         schulKalender = w(.schulKalender, s.schulKalender); gehaltErinnern = w(.gehaltErinnern, s.gehaltErinnern); gehaltTag = w(.gehaltTag, s.gehaltTag)
+        gehaltAuto = w(.gehaltAuto, s.gehaltAuto); kachelReihenfolge = w(.kachelReihenfolge, s.kachelReihenfolge)
+        nachtlampe = w(.nachtlampe, s.nachtlampe); nachtlampeHelligkeit = w(.nachtlampeHelligkeit, s.nachtlampeHelligkeit)
+        nachtGeschichte = w(.nachtGeschichte, s.nachtGeschichte); nachtGeschichteKurzbefehl = w(.nachtGeschichteKurzbefehl, s.nachtGeschichteKurzbefehl)
         schulOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .schulOrt)) ?? nil
         zuhauseOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .zuhauseOrt)) ?? nil
         schulzeiten = w(.schulzeiten, s.schulzeiten); unterricht = w(.unterricht, s.unterricht)
