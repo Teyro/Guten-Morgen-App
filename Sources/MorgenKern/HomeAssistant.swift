@@ -28,7 +28,6 @@ public struct HomeAssistant: Sendable {
         } catch { return false }
     }
 
-    /// Post und Pakete von heute (Integration „Briefankündigung“, Aktion briefankuendigung.heute) – "" wenn nichts kommt
     /// Nachtlampe anlassen bzw. gedimmt einschalten (nachdem alles andere ausgegangen ist)
     @discardableResult public func nachtlampe(_ entity: String, helligkeit: Int) async -> Bool {
         let e = entity.trimmingCharacters(in: .whitespaces)
@@ -37,6 +36,7 @@ public struct HomeAssistant: Sendable {
         catch { return false }
     }
 
+    /// Post und Pakete von heute (Integration „Briefankündigung“, Aktion briefankuendigung.heute) – "" wenn nichts kommt
     public func postHeute() async -> String {
         guard let j = try? await anfrage("/api/services/briefankuendigung/heute?return_response", koerper: [:]) as? [String: Any] else { return "" }
         let r = j["service_response"] as? [String: Any] ?? j

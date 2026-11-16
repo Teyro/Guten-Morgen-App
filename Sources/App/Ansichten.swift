@@ -512,7 +512,7 @@ struct EinstellungenAnsicht: View {
                 }
                 TextField(kern.einstellungen.nachtGeschichteKurzbefehl ? "Name des Kurzbefehls" : "Spotify-Link (Playlist/Album)", text: $k.einstellungen.nachtGeschichte).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Toggle("Geschichte über einen Kurzbefehl starten", isOn: $k.einstellungen.nachtGeschichteKurzbefehl)
-            } header: { Text("Gute Nacht") } footer: { Text("„Gute Nacht“ schaltet zuerst deine Aktionen oben (z. B. alle Lichter aus), lässt dann die Nachtlampe gedimmt an und spielt die Geschichte. Für eine zufällige Bibi-und-Tina-Folge eine Playlist als Spotify-Link eintragen (Spotify spielt sie gemischt). Für „30 Minuten, dann aus“ einen Kurzbefehl anlegen, der die Folge startet und einen 30-Minuten-Timer stellt, und hier dessen Namen eintragen.") }
+            } header: { Text("Gute Nacht") } footer: { Text("„Gute Nacht“ schaltet zuerst deine Aktionen oben (z. B. alle Lichter aus), lässt dann die Nachtlampe gedimmt an und spielt die Geschichte. Ein Spotify-Link öffnet die Playlist in Spotify (Zufallswiedergabe dort einschalten, dann kommt jedes Mal eine andere Folge). Für „30 Minuten, dann aus“ einen Kurzbefehl anlegen, der die Folge startet und einen 30-Minuten-Timer stellt, und hier dessen Namen eintragen.") }
 
             Section {
                 Toggle("Vertretungsplan", isOn: $k.einstellungen.vertretung)
@@ -710,8 +710,11 @@ struct EinstellungenAnsicht: View {
             Section {
                 Toggle("Abrechnung automatisch abrufen", isOn: $k.einstellungen.gehaltAuto)
                     .onChange(of: kern.einstellungen.gehaltAuto) { _, an in
-                        if an { Task { _ = await Melder.erlauben() } }
-                        GehaltErinnerung.planen(an: false, tag: 0)   // alte monatliche Erinnerung abschalten
+                        if an {
+                            Task { _ = await Melder.erlauben() }
+                            // ersetzt die monatliche Erinnerung – Schalter mit aus, sonst plant das nächste Aktualisieren sie wieder ein
+                            k.einstellungen.gehaltErinnern = false
+                        }
                     }
                 Toggle("Erinnerung an die Gehaltsabrechnung", isOn: $k.einstellungen.gehaltErinnern)
                     .onChange(of: kern.einstellungen.gehaltErinnern) { _, an in

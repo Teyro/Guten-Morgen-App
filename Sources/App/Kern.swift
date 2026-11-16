@@ -327,8 +327,8 @@ final class Kern {
                 d.erledigt.append("Nachtlampe an")
             }
         }
-        // Gute-Nacht-Geschichte (z. B. zufällige Bibi-und-Tina-Folge über Spotify oder einen Kurzbefehl)
-        if !vorschau, !einstellungen.nachtGeschichte.isEmpty,
+        // Gute-Nacht-Geschichte (z. B. Bibi-und-Tina-Playlist über Spotify oder einen Kurzbefehl) – nur zu Hause, wie die Nachtlampe
+        if !vorschau, !unterwegs, !einstellungen.nachtGeschichte.isEmpty,
            let u = Weckmusik.fremdeURL(link: einstellungen.nachtGeschichte, kurzbefehl: einstellungen.nachtGeschichteKurzbefehl) {
             await MainActor.run { UIApplication.shared.open(u) }
         }

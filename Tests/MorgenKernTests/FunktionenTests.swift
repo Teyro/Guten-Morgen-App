@@ -10,9 +10,9 @@ final class FunktionenTests: XCTestCase {
         let regen = WetterTag(code: 61, max: 10, min: 6, regen: 70, wind: 10)
         let b = [block("1", "4a Sport · Halle"), block("2", "4a Deutsch")]
         XCTAssertEqual(Mitnehmen.hinweise(b, wetter: regen), ["Sportzeug", "Regenjacke"])
-        // Schwimmen hat Vorrang vor Sport, Glätte statt Regenjacke
+        // Schwimmen hat Vorrang vor Sport; bei Glätte trotzdem nur Einpackbares
         let glatt = WetterTag(code: 66, max: 1, min: -1, regen: 80, wind: 5)
-        XCTAssertEqual(Mitnehmen.hinweise([block("3", "4a Schwimmen")], wetter: glatt), ["Schwimmsachen", "Vorsicht, glatt"])
+        XCTAssertEqual(Mitnehmen.hinweise([block("3", "4a Schwimmen")], wetter: glatt), ["Schwimmsachen", "Regenjacke"])   // Glätte meldet das Briefing selbst
         XCTAssertTrue(Mitnehmen.hinweise([block("1", "4a Mathe")], wetter: nil).isEmpty)
         XCTAssertEqual(Mitnehmen.satz([block("1", "4a Sport")], wetter: nil, wann: "Morgen"), "Morgen mitnehmen: Sportzeug.")
     }
@@ -33,10 +33,21 @@ final class FunktionenTests: XCTestCase {
         DTSTART;VALUE=DATE:20260101
         SUMMARY:Vorbei
         END:VEVENT
+        BEGIN:VEVENT
+        DTSTART;VALUE=DATE:20261112
+        DTEND;VALUE=DATE:20261115
+        SUMMARY:Projektwoche
+        END:VEVENT
+        BEGIN:VEVENT
+        DTSTART;VALUE=DATE:20261110
+        DTEND;VALUE=DATE:20261114
+        SUMMARY:Gestern zu Ende
+        END:VEVENT
         END:VCALENDAR
         """
         let t = SchulKalender.termine(ics, ab: ab, tage: 45)
-        XCTAssertEqual(t.map(\.titel), ["Laternenfest", "Elternabend 4a"])   // sortiert, Vergangenes raus
+        XCTAssertEqual(t.map(\.titel), ["Projektwoche", "Laternenfest", "Elternabend 4a"])   // sortiert, Vergangenes raus, Laufendes mit heute
+        XCTAssertEqual(t.first?.datum, "2026-11-14")
         XCTAssertEqual(SchulKalender.datumText("2026-11-15", jetzt: ab), "morgen")
         XCTAssertEqual(SchulKalender.datumText("2026-11-14", jetzt: ab), "heute")
     }
@@ -55,5 +66,9 @@ func testGehaltAbruf() {
         XCTAssertFalse(GehaltAbruf.faellig(nach, letzterTag: "2026-11-16")) // heute schon
         let samstag = k.date(from: DateComponents(year: 2026, month: 11, day: 21, hour: 13))!
         XCTAssertFalse(GehaltAbruf.faellig(samstag, letzterTag: ""))
+        // ein ganzes Jahr: immer 11–15 Uhr, kein Absturz, und nicht jeden Tag dieselbe Uhrzeit
+        let minuten = (0..<366).map { GehaltAbruf.zielMinute(k.date(byAdding: .day, value: $0, to: tag)!) }
+        XCTAssertTrue(minuten.allSatisfy { $0 >= 660 && $0 <= 900 })
+        XCTAssertGreaterThan(Set(minuten).count, 200)
     }
 }

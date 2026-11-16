@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import UIKit
 import QuickLook
+import PDFKit
 import UserNotifications
 import MorgenKern
 
@@ -73,8 +74,10 @@ import MorgenKern
                         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if self?.ziele.isEmpty == true { self?.beenden() } }
                     }
                 }
-            } else if w.url?.path.contains("login2fa") == false {
-                w.evaluateJavaScript("document.getElementById('token') != null") { r, _ in
+            } else {
+                // OTP-Seite wie bei der Anmeldung von Hand erkennen (Feld „token“ im Formular „loginForm“);
+                // /l3hrbc/login2fa ist nur der AJAX-Aufruf dahinter, keine eigene Seite
+                w.evaluateJavaScript("document.getElementById('token') != null && document.getElementById('loginForm') != null") { r, _ in
                     guard (r as? Bool) == true, self.versuche < 4 else { return }
                     self.versuche += 1
                     w.evaluateJavaScript(Personaldaten.otpSkript(code: IServ.totp(PersonalZugang.geheimnis)))
@@ -91,14 +94,14 @@ import MorgenKern
     func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { download.delegate = self }
     func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { download.delegate = self }
     func download(_ d: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-        let vorher = Set(PersonalAblage.dateien().map(\.lastPathComponent))
         let ziel = PersonalAblage.ziel(fuer: suggestedFilename)
         ziele[ObjectIdentifier(d)] = ziel
-        UserDefaults.standard.set(Array(vorher), forKey: "gehaltVorher")
         completionHandler(ziel)
     }
     func downloadDidFinish(_ d: WKDownload) {
         guard let u = ziele.removeValue(forKey: ObjectIdentifier(d)) else { return }
+        // Dieselbe Abrechnung wie gestern: Kopie verwerfen, keine Mitteilung
+        if PersonalAblage.schonDa(u) { try? FileManager.default.removeItem(at: u); beenden(); return }
         try? (u as NSURL).setResourceValue(URLFileProtection.complete, forKey: .fileProtectionKey)
         melde("Neue Abrechnung", u.deletingPathExtension().lastPathComponent)
         beenden()
@@ -137,6 +140,17 @@ enum PersonalAblage {
         let liste = (try? fm.contentsOfDirectory(at: ordner, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles)) ?? []
         func datum(_ u: URL) -> Date { (try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
         return liste.sorted { datum($0) > datum($1) }
+    }
+    /// Liegt dieselbe Abrechnung schon in der Ablage? Das Portal erzeugt die PDF bei jedem Abruf neu (andere Metadaten,
+    /// andere Bytes) – darum zählt bei PDFs der Text, sonst der Dateiinhalt. Sonst käme jeden Tag „Neue Abrechnung“.
+    static func schonDa(_ neu: URL) -> Bool {
+        guard let daten = try? Data(contentsOf: neu) else { return false }
+        let text = neu.pathExtension.lowercased() == "pdf" ? PDFDocument(data: daten)?.string ?? "" : ""
+        return dateien().contains { alt in
+            guard alt.lastPathComponent != neu.lastPathComponent, alt.pathExtension.lowercased() == neu.pathExtension.lowercased() else { return false }
+            if (try? Data(contentsOf: alt)) == daten { return true }
+            return !text.isEmpty && PDFDocument(url: alt)?.string == text
+        }
     }
     /// Freier Dateiname (vorhandene nicht überschreiben)
     static func ziel(fuer name: String) -> URL {

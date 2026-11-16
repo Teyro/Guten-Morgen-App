@@ -8,10 +8,8 @@ public enum Mitnehmen {
             .map { ($0.text + " " + ($0.ersetzt ?? "")).lowercased() }.joined(separator: " · ")
         if text.contains("schwimm") { h.append("Schwimmsachen") }
         if text.contains("sport") && !h.contains("Schwimmsachen") { h.append("Sportzeug") }
-        if let w = wetter {
-            if Wetter.glaette(w) { h.append("Vorsicht, glatt") }
-            else if w.regen >= 50 { h.append("Regenjacke") }
-        }
+        // Nur Dinge zum Einpacken – Glätte meldet das Briefing schon selbst (sonst „Mitnehmen: …, Vorsicht, glatt“)
+        if let w = wetter, w.regen >= 50 { h.append("Regenjacke") }
         return h
     }
 

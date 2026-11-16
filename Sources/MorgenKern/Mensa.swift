@@ -358,17 +358,22 @@ public enum SchulKalender {
             return k.date(from: DateComponents(year: j, month: m, day: t, hour: 12))
         }
         var erg: [Termin] = []
-        var start: Date?, titel = ""
+        var start: Date?, ende: Date?, titel = ""
         for z in zeilen {
             guard let doppel = z.firstIndex(of: ":") else { continue }
             let name = z[..<doppel].split(separator: ";").first.map { $0.uppercased() } ?? ""
             let wert = String(z[z.index(after: doppel)...]).trimmingCharacters(in: .whitespaces)
             switch name {
-            case "BEGIN" where wert == "VEVENT": start = nil; titel = ""
+            case "BEGIN" where wert == "VEVENT": start = nil; ende = nil; titel = ""
             case "DTSTART": start = datum(Substring(wert))
+            case "DTEND": ende = datum(Substring(wert))
             case "SUMMARY": titel = wert.replacingOccurrences(of: "\\,", with: ",").replacingOccurrences(of: "\\n", with: " ").replacingOccurrences(of: "\\", with: "")
             case "END" where wert == "VEVENT":
-                if let s = start, s >= heute, s < bis, !titel.isEmpty { erg.append(Termin(datum: Zeit.iso(s), titel: titel)) }
+                // Mehrtägige Termine, die schon laufen (Projektwoche, Klassenfahrt), bleiben drin – mit heute als Tag.
+                // Ganztags-DTEND ist exklusiv: endet am 15. = letzter Tag der 14.
+                guard let s = start, s < bis, !titel.isEmpty else { break }
+                if s >= heute { erg.append(Termin(datum: Zeit.iso(s), titel: titel)) }
+                else if let e = ende, e > heute.addingTimeInterval(12 * 3600) { erg.append(Termin(datum: Zeit.iso(heute), titel: titel)) }
             default: break
             }
         }

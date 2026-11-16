@@ -6,8 +6,10 @@ public enum GehaltAbruf {
     /// Minute nach Mitternacht (660 = 11:00 … 900 = 15:00), je Tag fest aus dem Datum abgeleitet.
     public static func zielMinute(_ tag: Date, kalender: Calendar = Zeit.kalender) -> Int {
         let t = kalender.ordinality(of: .day, in: .era, for: tag) ?? 0
-        // einfacher, deterministischer Streuwert (Faktor passt auch in 32-Bit Int – Watch-App)
-        let streu = abs(t &* 48271) % 241          // 0 … 240
+        // Deterministischer Streuwert ohne Überlauf (auch auf der 32-Bit-Watch): erst auf 0…240 bringen, dann mit
+        // einem Faktor teilerfremd zu 241 (Primzahl) mischen – benachbarte Tage liegen so weit auseinander.
+        // (Vorher abs(t &* 48271): konnte Int.min ergeben, und abs(Int.min) bricht ab.)
+        let streu = ((t % 241 + 241) % 241 * 97 + 13) % 241   // 0 … 240
         return 11 * 60 + streu                      // 11:00 … 15:00
     }
 
