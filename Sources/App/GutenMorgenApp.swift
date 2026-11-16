@@ -29,8 +29,8 @@ struct GutenMorgenApp: App {
     }
     var body: some Scene {
         WindowGroup {
+            // Akzent = Systemblau (Asset „AccentColor“) – die App hat die Standardfarben von iOS
             HauptAnsicht(kern: kern)
-                .tint(.orange)
                 .onOpenURL { url in
                     // gutenmorgen://vorlesen (z. B. aus einem Kurzbefehl nach dem Wecker), gutenmorgen://gutenacht
                     switch url.host {
