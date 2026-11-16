@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>de</string>
-	<key>CFBundleDisplayName</key><string>Guten Morgen</string>
+	<key>CFBundleDisplayName</key><string>DammAPP</string>
 	<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleName</key><string>Guten Morgen</string>
+	<key>CFBundleName</key><string>DammAPP</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
@@ -24,10 +24,10 @@
 	<key>NSCalendarsFullAccessUsageDescription</key><string>Für die Weckzeit (früher wecken vor dem ersten Termin) und das Morgen-Briefing.</string>
 	<key>NSRemindersFullAccessUsageDescription</key><string>Fällige Erinnerungen werden im Morgen-Briefing vorgelesen.</string>
 	<key>NSLocationWhenInUseUsageDescription</key><string>Damit App und Widget in der Schule die Schul-Infos und zu Hause Termine und Post zuerst zeigen. Der Standort bleibt auf dem iPhone.</string>
-	<key>NSHealthShareUsageDescription</key><string>Guten Morgen zeigt morgens, wie lange du geschlafen hast.</string>
-	<key>NSHealthUpdateUsageDescription</key><string>Guten Morgen trägt die Zeit im Nachtmodus als Schlaf in Health ein.</string>
-	<key>NSAlarmKitUsageDescription</key><string>Guten Morgen stellt den Wecker für dich – passend zu Terminen, Ferien und Feiertagen.</string>
-	<key>NSLocalNetworkUsageDescription</key><string>Guten Morgen verbindet sich mit Home Assistant in deinem Heimnetz.</string>
+	<key>NSHealthShareUsageDescription</key><string>DammAPP zeigt morgens, wie lange du geschlafen hast.</string>
+	<key>NSHealthUpdateUsageDescription</key><string>DammAPP trägt die Zeit im Nachtmodus als Schlaf in Health ein.</string>
+	<key>NSAlarmKitUsageDescription</key><string>DammAPP stellt den Wecker für dich – passend zu Terminen, Ferien und Feiertagen.</string>
+	<key>NSLocalNetworkUsageDescription</key><string>DammAPP verbindet sich mit Home Assistant in deinem Heimnetz.</string>
 	<key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
 </plist>

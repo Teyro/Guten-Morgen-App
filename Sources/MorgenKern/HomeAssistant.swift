@@ -110,7 +110,7 @@ public enum Routine {
         }
         return [
             "alias": "Guten Morgen – Morgenroutine",
-            "description": "Angelegt von der App „Guten Morgen“. Die Zeiten richten sich nach dem Wecker (\(sensor)). Ändern bitte in der App – sie überschreibt diese Automation.",
+            "description": "Angelegt von der App „DammAPP“. Die Zeiten richten sich nach dem Wecker (\(sensor)). Ändern bitte in der App – sie überschreibt diese Automation.",
             "mode": "parallel",
             "triggers": ausloeser,
             "conditions": [],

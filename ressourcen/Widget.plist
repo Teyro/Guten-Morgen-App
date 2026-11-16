@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>de</string>
-	<key>CFBundleDisplayName</key><string>Guten Morgen</string>
+	<key>CFBundleDisplayName</key><string>DammAPP</string>
 	<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleName</key><string>Guten Morgen Widget</string>

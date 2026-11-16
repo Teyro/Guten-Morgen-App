@@ -196,7 +196,7 @@ struct MorgenWidget: Widget {
             }
             .widgetURL(URL(string: "gutenmorgen://start"))
         }
-        .configurationDisplayName("Guten Morgen")
+        .configurationDisplayName("DammAPP")
         .description("Wecker, Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Termine und Post – ab 16 Uhr schon für morgen.")
         #if os(iOS)
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline, .accessoryCircular])

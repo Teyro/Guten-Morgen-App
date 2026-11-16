@@ -94,10 +94,10 @@ struct UhrAnsicht: View {
                         }
                     }
                 } else {
-                    Text("Bitte einmal Guten Morgen auf dem iPhone öffnen.").font(.footnote)
+                    Text("Bitte einmal DammAPP auf dem iPhone öffnen.").font(.footnote)
                 }
             }
         }
-        .navigationTitle("Guten Morgen")
+        .navigationTitle("DammAPP")
     }
 }
