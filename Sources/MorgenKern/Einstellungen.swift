@@ -97,6 +97,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var gehaltAuto = false
     /// Eigene Reihenfolge der Kacheln auf dem Startbildschirm (leer = automatisch)
     public var kachelReihenfolge: [String] = []
+    /// Auf der Startseite ausgeblendete Kacheln (Einstellungen → Startseite)
+    public var kachelAus: [String] = []
     /// Gute Nacht: HA-Nachtlampe, die anbleibt (gedimmt), während alles andere ausgeht
     public var nachtlampe = ""
     public var nachtlampeHelligkeit = 15
@@ -152,7 +154,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
-             mitteilungen, vertretungMelden, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
+             mitteilungen, vertretungMelden, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
              untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
     }
@@ -183,7 +185,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         mitteilungen = w(.mitteilungen, s.mitteilungen)
         vertretungMelden = w(.vertretungMelden, s.vertretungMelden); mitnehmen = w(.mitnehmen, s.mitnehmen)
         schulKalender = w(.schulKalender, s.schulKalender); gehaltErinnern = w(.gehaltErinnern, s.gehaltErinnern); gehaltTag = w(.gehaltTag, s.gehaltTag)
-        gehaltAuto = w(.gehaltAuto, s.gehaltAuto); kachelReihenfolge = w(.kachelReihenfolge, s.kachelReihenfolge)
+        gehaltAuto = w(.gehaltAuto, s.gehaltAuto); kachelReihenfolge = w(.kachelReihenfolge, s.kachelReihenfolge); kachelAus = w(.kachelAus, s.kachelAus)
         nachtlampe = w(.nachtlampe, s.nachtlampe); nachtlampeHelligkeit = w(.nachtlampeHelligkeit, s.nachtlampeHelligkeit)
         nachtGeschichte = w(.nachtGeschichte, s.nachtGeschichte); nachtGeschichteKurzbefehl = w(.nachtGeschichteKurzbefehl, s.nachtGeschichteKurzbefehl)
         schulOrt = (try? c.decodeIfPresent(Kontext.Ort.self, forKey: .schulOrt)) ?? nil

@@ -50,7 +50,8 @@ final class Kern {
         if let w { UserDefaults.standard.set(try? JSONEncoder().encode(w), forKey: k) } else { UserDefaults.standard.removeObject(forKey: k) }
     }
     private static func gemerkt<T: Decodable>(_ k: String) -> T? { UserDefaults.standard.data(forKey: k).flatMap { try? JSONDecoder().decode(T.self, from: $0) } }
-    var farbton: Farbton { Farbton.zu(einstellungen.farbton) }
+    /// Farben der App: immer Apple-Standard (System-Hintergrund, Systemblau). Der gewählte Farbton gilt nur fürs Widget.
+    var farbton: Farbton { Farbton.zu("system") }
 
     var wetter: Wetter?
     var frei: [FreierTag] = []

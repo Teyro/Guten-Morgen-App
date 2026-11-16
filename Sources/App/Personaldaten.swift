@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import UIKit
 import QuickLook
+import QuickLookThumbnailing
 import PDFKit
 import UserNotifications
 import MorgenKern
@@ -178,6 +179,60 @@ enum PersonalZugang {
 }
 
 /// Bereich „Personaldaten“: Portal mit automatischer Anmeldung und die gespeicherten Dokumente
+/// Startseite: Personaldaten (ZPD) mit Mini-Vorschau der letzten drei Dokumente. Antippen öffnet das Dokument,
+/// „Alle Dokumente“ die Personaldaten-Seite. Vorschaubilder erzeugt iOS (QuickLook), nichts verlässt das Gerät.
+struct PersonalKarte: View {
+    let alle: () -> Void
+    @Environment(\.displayScale) private var skala
+    @State private var dateien: [URL] = []
+    @State private var bilder: [URL: UIImage] = [:]
+    @State private var vorschau: URL?
+
+    var body: some View {
+        // Stand der Ablage: ändert sich, wenn ein neues Dokument dazukommt → Vorschau neu laden
+        let stand = PersonalAblage.dateien().prefix(3).map(\.lastPathComponent).joined(separator: "|")
+        Karte(symbol: "person.text.rectangle.fill", farbe: .blue, titel: "Personaldaten (ZPD)") {
+            if dateien.isEmpty {
+                Button(action: alle) { Label("Noch keine Dokumente – Portal öffnen", systemImage: "arrow.down.doc").font(.callout) }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(dateien, id: \.self) { u in
+                        Button { vorschau = u } label: {
+                            VStack(spacing: 4) {
+                                Group {
+                                    if let b = bilder[u] { Image(uiImage: b).resizable().scaledToFit() }
+                                    else { Image(systemName: "doc.text").font(.title2).foregroundStyle(.secondary) }
+                                }
+                                .frame(width: 72, height: 96)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(.quaternary))
+                                Text(u.deletingPathExtension().lastPathComponent).font(.caption2).foregroundStyle(.secondary)
+                                    .lineLimit(2).multilineTextAlignment(.center).frame(width: 84)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dokument \(u.deletingPathExtension().lastPathComponent) öffnen")
+                    }
+                    Spacer(minLength: 0)
+                }
+                Button("Alle Dokumente", action: alle).font(.callout.weight(.semibold))
+            }
+        }
+        .quickLookPreview($vorschau, in: dateien)
+        .task(id: stand) { await laden() }
+    }
+
+    private func laden() async {
+        let neu = Array(PersonalAblage.dateien().prefix(3))
+        dateien = neu
+        for u in neu where bilder[u] == nil {
+            let anfrage = QLThumbnailGenerator.Request(fileAt: u, size: CGSize(width: 72, height: 96), scale: skala, representationTypes: .thumbnail)
+            if let t = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: anfrage) { bilder[u] = t.uiImage }
+        }
+    }
+}
+
 struct PersonaldatenAnsicht: View {
     @State private var eingerichtet = PersonalZugang.vollstaendig
     @State private var teil = 0

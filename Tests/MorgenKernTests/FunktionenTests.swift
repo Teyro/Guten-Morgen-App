@@ -72,3 +72,20 @@ func testGehaltAbruf() {
         XCTAssertGreaterThan(Set(minuten).count, 200)
     }
 }
+
+final class StartseiteTests: XCTestCase {
+    func testAutomatischUndAusgeblendet() {
+        XCTAssertEqual(Startseite.ordnung(eigen: [], aus: [], inDerSchule: true).prefix(3), ["wecker", "schule", "mensa"])
+        XCTAssertEqual(Startseite.ordnung(eigen: [], aus: [], inDerSchule: false).prefix(3), ["wecker", "termine", "post"])
+        XCTAssertFalse(Startseite.ordnung(eigen: [], aus: ["wetter", "personal"], inDerSchule: true).contains("wetter"))
+    }
+
+    func testAlteReihenfolgeBekommtNeueKachelnHinterSchule() {
+        // gespeichert mit 2.4 (nur 5 Kacheln): Speiseplan, Zahlen, Schultermine waren Teil der Schule
+        let r = Startseite.vollstaendig(["termine", "schule", "wecker", "wetter", "post"], inDerSchule: true)
+        XCTAssertEqual(r, ["termine", "schule", "mensa", "zahlen", "schultermine", "wecker", "wetter", "post", "personal"])
+        XCTAssertEqual(Set(r).count, Startseite.alle.count)
+        // Unbekanntes aus einer neueren Version wird ignoriert
+        XCTAssertFalse(Startseite.vollstaendig(["schule", "gibtsnicht"], inDerSchule: true).contains("gibtsnicht"))
+    }
+}

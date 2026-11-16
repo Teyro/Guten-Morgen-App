@@ -2,15 +2,24 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MorgenKern
 
-/// Verschiebbare Kacheln auf dem Startbildschirm (Kopf und Knöpfe bleiben fest)
+/// Verschiebbare, abschaltbare Kacheln auf dem Startbildschirm (Kopf und Knöpfe bleiben fest).
+/// Reihenfolge und Sichtbarkeit regelt MorgenKern.Startseite (testbar).
 enum Kachel: String, CaseIterable, Identifiable {
-    case wecker, schule, wetter, termine, post
+    case wecker, schule, mensa, zahlen, schultermine, wetter, termine, post, personal
     var id: String { rawValue }
     var name: String {
-        switch self { case .wecker: "Wecker"; case .schule: "Schule"; case .wetter: "Wetter"; case .termine: "Termine & Erinnerungen"; case .post: "Post & Pakete" }
+        switch self {
+        case .wecker: "Wecker"; case .schule: "Schule (Stunden & Vertretung)"; case .mensa: "Speiseplan"
+        case .zahlen: "Kinder · Störungen · Aufgaben"; case .schultermine: "Schultermine"; case .wetter: "Wetter"
+        case .termine: "Termine & Erinnerungen"; case .post: "Post & Pakete"; case .personal: "Personaldaten (ZPD)"
+        }
     }
     var symbol: String {
-        switch self { case .wecker: "alarm.fill"; case .schule: "graduationcap.fill"; case .wetter: "cloud.sun.fill"; case .termine: "calendar"; case .post: "shippingbox.fill" }
+        switch self {
+        case .wecker: "alarm.fill"; case .schule: "graduationcap.fill"; case .mensa: "fork.knife"; case .zahlen: "number.square.fill"
+        case .schultermine: "calendar.badge.clock"; case .wetter: "cloud.sun.fill"; case .termine: "calendar"; case .post: "shippingbox.fill"
+        case .personal: "person.text.rectangle.fill"
+        }
     }
 }
 
@@ -104,20 +113,24 @@ struct HauptAnsicht: View {
         .onChange(of: phase) { _, neu in if neu == .active { Task { await kern.aktualisieren() }; if kern.einstellungen.gehaltAuto { GehaltDienst.shared.pruefen() } } }
     }
 
-    /// Reihenfolge der Kacheln: eigene aus den Einstellungen, sonst automatisch (in der Schule Schule zuerst)
+    /// Sichtbare Kacheln in Reihenfolge: eigene aus den Einstellungen, sonst automatisch (in der Schule Schule zuerst)
     private var kachelOrdnung: [Kachel] {
-        let eigen = kern.einstellungen.kachelReihenfolge.compactMap(Kachel.init(rawValue:))
-        if !eigen.isEmpty { return eigen + Kachel.allCases.filter { !eigen.contains($0) } }
-        return kern.kontext == .schule ? [.wecker, .schule, .wetter, .termine, .post] : [.wecker, .termine, .post, .wetter, .schule]
+        Startseite.ordnung(eigen: kern.einstellungen.kachelReihenfolge, aus: kern.einstellungen.kachelAus, inDerSchule: kern.kontext == .schule)
+            .compactMap(Kachel.init(rawValue:))
     }
 
     @ViewBuilder private func kachel(_ k: Kachel) -> some View {
+        let e = kern.einstellungen
         switch k {
         case .wecker: WeckerKarte(kern: kern)
-        case .schule: if zeigeSchule { SchuleKarte(kern: kern) { pfad = [$0] } }
+        case .schule: if zeigeSchule { SchuleKarte(kern: kern, teil: .tag) { pfad = [$0] } }
+        case .mensa: if e.mensa { SchuleKarte(kern: kern, teil: .mensa) { pfad = [$0] } }
+        case .zahlen: if e.abwesenheiten || e.stoerungen || e.aufgaben { SchuleKarte(kern: kern, teil: .zahlen) { pfad = [$0] } }
+        case .schultermine: if !kern.schulTermineBald.isEmpty { SchultermineKarte(termine: kern.schulTermineBald) }
         case .wetter: if let w = kern.wetter { WetterKarte(wetter: w) }
         case .termine: termineKarte
         case .post: if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
+        case .personal: if PersonalZugang.vollstaendig || !PersonalAblage.dateien().isEmpty { PersonalKarte { pfad = [.personal] } }
         }
     }
 
@@ -130,10 +143,10 @@ struct HauptAnsicht: View {
         }
     }
 
-    /// Schul-Karte nur, wenn etwas davon eingerichtet ist
+    /// Schul-Karte nur, wenn etwas davon da ist (Speiseplan, Zahlen, Schultermine haben eigene Kacheln)
     private var zeigeSchule: Bool {
         let e = kern.einstellungen
-        return (e.vertretung && !e.vertretungLink.isEmpty) || e.mensa || e.obstBereit || e.abwesenheiten || e.stoerungen || e.aufgaben
+        return (e.vertretung && !e.vertretungLink.isEmpty) || e.obstBereit || !kern.schultagGanz.isEmpty || !kern.anfahrtText.isEmpty || !kern.mitnehmen.isEmpty
     }
 
     private var kopf: some View {
@@ -170,7 +183,7 @@ struct HauptAnsicht: View {
             Button { Task { await kern.nachtVorbereiten(); kern.nachtOffen = true } } label: {
                 Label(kern.musik.quelle == .aus ? "Nachtmodus" : "Nachtmodus · \(kern.musik.anzeige)", systemImage: "bed.double.fill")
                     .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 52)
-                    .glasKnopf(Color(red: 0.2, green: 0.2, blue: 0.42), 16)
+                    .glasKnopf(.indigo, 16)
             }
         }
         .buttonStyle(.plain)
@@ -285,14 +298,45 @@ struct TermineKarte: View {
     }
 }
 
-/// Alles zur Schule heute: wo muss ich rein, Aufsicht, Schulobst, Mensa – wie die Übersicht in Mein Tag
+/// Schulweite Termine aus dem abonnierten Kalender – eigene Kachel, getrennt von Vertretung und eigenen Terminen
+/// (vorher lila Zeilen mitten in der Schul-Karte, kaum von Vertretungen zu unterscheiden).
+struct SchultermineKarte: View {
+    let termine: [SchulKalender.Termin]
+    var body: some View {
+        Karte(symbol: "calendar.badge.clock", farbe: .indigo, titel: "Schultermine") {
+            ForEach(termine) { t in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(SchulKalender.datumText(t.datum)).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 82, alignment: .leading)
+                    Text(t.titel)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+}
+
+/// Schule heute – als drei eigene, verschiebbare Kacheln: [Teil.tag] Stunden, Vertretung, Mitnehmen, Obst;
+/// [Teil.mensa] Speiseplan; [Teil.zahlen] Kinder/Störungen/Aufgaben. Schultermine stehen in SchultermineKarte.
 struct SchuleKarte: View {
+    enum Teil { case tag, mensa, zahlen }
     let kern: Kern
+    var teil: Teil = .tag
     let oeffne: (Bereich) -> Void
     @Environment(\.openURL) private var oeffneURL
     @State private var bemerkungen = false
 
     var body: some View {
+        switch teil {
+        case .tag: schultag
+        case .mensa:
+            Karte(symbol: "fork.knife", farbe: .orange, titel: "Speiseplan " + kern.schulTagName) {
+                Button { oeffne(.mensa) } label: { mensa(kern.einstellungen) }.buttonStyle(.plain)
+            }
+        case .zahlen: zahlen
+        }
+    }
+
+    @ViewBuilder private var schultag: some View {
         let e = kern.einstellungen
         Karte(symbol: "graduationcap.fill", farbe: .purple, titel: "Schule " + kern.schulTagName) {
             if !kern.anfahrtText.isEmpty {
@@ -331,13 +375,13 @@ struct SchuleKarte: View {
             if e.obstBereit && kern.obstHeute {
                 Zeile(marke: "🍎", farbe: .green, titel: kern.schulTagName == "heute" ? "Heute kommt Schulobst" : "Schulobst kommt", unter: nil)
             }
-            if e.mensa {
-                Button { oeffne(.mensa) } label: { mensa(e) }.buttonStyle(.plain)
-            }
-            ForEach(kern.schulTermineBald) { t in
-                Zeile(marke: "📅", farbe: .purple, titel: t.titel, unter: SchulKalender.datumText(t.datum))
-            }
-            // Kinder, Störungen, Aufgaben: Zahlen-Kacheln, antippen öffnet die Liste
+        }
+    }
+
+    /// Kinder, Störungen, Aufgaben: Zahlen-Kacheln, antippen öffnet die Liste
+    @ViewBuilder private var zahlen: some View {
+        let e = kern.einstellungen
+        VStack(alignment: .leading, spacing: 0) {
             let kacheln: [(Bereich, String, String, String, Color)] = [
                 e.abwesenheiten ? (.abwesend, "person.crop.circle.badge.xmark", kern.abwesend.map { "\(Abwesenheiten.amTag($0.eintraege, ziel: kern.schulTag, klassen: e.klassenListe).count)" } ?? (kern.abwesendFehler.isEmpty ? "…" : "!"), "Kinder fehlen", Color.red) : nil,
                 e.stoerungen ? (.stoerungen, "wrench.and.screwdriver.fill", kern.stoerungen.map { "\($0.offen.count)" } ?? (kern.stoerungenFehler.isEmpty ? "…" : "!"), "Störungen", Color.orange) : nil,
@@ -351,11 +395,10 @@ struct SchuleKarte: View {
                                 HStack(spacing: 4) { Image(systemName: k.1).foregroundStyle(k.4); Text(k.2).font(.title3.weight(.bold).monospacedDigit()) }
                                 Text(k.3).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(10).glas(14)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(14).glas(22)
                         }.buttonStyle(.plain)
                     }
                 }
-                .padding(.top, 2)
             }
         }
     }
@@ -435,10 +478,18 @@ struct EinstellungenAnsicht: View {
     @Environment(\.openURL) private var oeffneURL
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
-    /// Aktuelle Kachel-Reihenfolge zum Anordnen (bei „automatisch“ die Standardreihenfolge)
+    /// Alle Kacheln in aktueller Reihenfolge (auch ausgeschaltete) zum Verschieben und Abschalten
     private var kachelOrdnungEinstellung: [Kachel] {
-        let eigen = kern.einstellungen.kachelReihenfolge.compactMap(Kachel.init(rawValue:))
-        return eigen.isEmpty ? Kachel.allCases : eigen + Kachel.allCases.filter { !eigen.contains($0) }
+        Startseite.vollstaendig(kern.einstellungen.kachelReihenfolge, inDerSchule: kern.kontext == .schule).compactMap(Kachel.init(rawValue:))
+    }
+
+    /// Schalter je Kachel: an = nicht in „kachelAus“
+    private func kachelAn(_ kc: Kachel) -> Binding<Bool> {
+        Binding(get: { !kern.einstellungen.kachelAus.contains(kc.rawValue) },
+                set: { an in
+                    kern.einstellungen.kachelAus.removeAll { $0 == kc.rawValue }
+                    if !an { kern.einstellungen.kachelAus.append(kc.rawValue) }
+                })
     }
 
     var body: some View {
@@ -460,7 +511,7 @@ struct EinstellungenAnsicht: View {
                         }
                     }.padding(.vertical, 6)
                 }
-            } header: { Text("Aussehen") } footer: { Text("Farbton für App und Widget.") }
+            } header: { Text("Farbe des Widgets") } footer: { Text("Die App selbst hat immer die Standardfarben von iOS. Der Farbton hier gilt für das Widget, die Uhr und die Live-Aktivität.") }
 
             Section {
                 ForEach(tage, id: \.0) { t in
@@ -728,7 +779,9 @@ struct EinstellungenAnsicht: View {
             } header: { Text("Personaldaten") } footer: { Text("„Automatisch abrufen“: einmal am Tag (Mo–Fr, zufällig zwischen 11 und 15 Uhr), während die App vorne ist, meldet sie sich still im Portal an und lädt eine neue Abrechnung, falls das Portal eine zeigt. Dein Konto wird nicht laufend abgefragt. Alternativ nur eine monatliche Erinnerung.") }
 
             Section {
-                ForEach(kachelOrdnungEinstellung) { kc in Label(kc.name, systemImage: kc.symbol) }
+                ForEach(kachelOrdnungEinstellung) { kc in
+                    Toggle(isOn: kachelAn(kc)) { Label(kc.name, systemImage: kc.symbol) }
+                }
                     .onMove { from, to in
                         var arr = kachelOrdnungEinstellung.map(\.rawValue)
                         arr.move(fromOffsets: from, toOffset: to)
@@ -737,7 +790,7 @@ struct EinstellungenAnsicht: View {
                 if !kern.einstellungen.kachelReihenfolge.isEmpty {
                     Button("Automatische Reihenfolge") { k.einstellungen.kachelReihenfolge = [] }
                 }
-            } header: { HStack { Text("Kacheln anordnen"); Spacer(); EditButton() } } footer: { Text("Ziehen zum Verschieben. „Automatisch“: in der Schule steht die Schule oben, zu Hause und am Wochenende Termine und Post.") }
+            } header: { HStack { Text("Startseite"); Spacer(); EditButton() } } footer: { Text("Schalter: Kachel zeigen oder ausblenden. „Bearbeiten“, dann ziehen zum Verschieben. „Automatisch“: in der Schule steht die Schule oben, zu Hause und am Wochenende Termine und Post. Kacheln ohne Inhalt (z. B. keine Schultermine) erscheinen von selbst nicht.") }
 
             Section {
                 Button("Widget verbinden") { Task { await kern.widgetUebergeben(erzwingen: true) } }
