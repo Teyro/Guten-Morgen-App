@@ -11,7 +11,7 @@ enum Melder {
                         planDa: Bool = false, betrifft: Bool = false, dringend: Bool = false, _ d: UserDefaults = .standard) {
         // Merkstand in der App Group: App und Widget prüfen beide – so meldet nur, wer es zuerst sieht
         if let v = vertretung, planDa || betrifft {
-            let g = MorgenEinstellungen.defaults
+            let g = MorgenAblage.defaults
             if let r = VertretungsMeldung.pruefen(v, altDatum: g.string(forKey: "gemeldetPlanDatum"), altSig: g.string(forKey: "gemeldetVertretung"),
                                                   planDa: planDa, betrifft: betrifft) {
                 g.set(r.datum, forKey: "gemeldetPlanDatum")
