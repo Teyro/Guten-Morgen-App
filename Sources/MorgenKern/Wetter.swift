@@ -130,8 +130,14 @@ public struct Wetter: Codable, Hashable, Sendable {
     /// Regenpause: Gewitter, Böen ab 70 km/h, Regen ab 0,3 mm in der Pause bzw. gemeldeter Regen mit ≥ 60 %,
     /// bei Schnee erst ab 1,5 mm (bei Schnee geht es meist trotzdem raus).
     public func pause(von: Date, bis: Date) -> PausenWetter? {
-        // Regen gilt für die 15 Minuten VOR dem Zeitpunkt → Schritte nach Pausenbeginn bis 15 Minuten nach dem Ende
-        let s = (verlauf ?? []).filter { $0.zeit > von && $0.zeit < bis.addingTimeInterval(15 * 60) }
+        // Ein Schritt gilt für die 15 Minuten VOR seinem Zeitpunkt. Er zählt, wenn er mindestens zur Hälfte in der Pause
+        // liegt (sonst machte Regen um 12:15–12:30 eine Pause bis 12:20 zur Regenpause); fehlt so einer, der mit der größten Überschneidung.
+        func ueberlappung(_ x: WetterSchritt) -> TimeInterval {
+            min(x.zeit, bis).timeIntervalSince(max(x.zeit.addingTimeInterval(-15 * 60), von))
+        }
+        let alle = (verlauf ?? []).filter { ueberlappung($0) > 0 }
+        let haelfte = alle.filter { ueberlappung($0) >= 7.5 * 60 }
+        let s = !haelfte.isEmpty ? haelfte : alle.max(by: { ueberlappung($0) < ueberlappung($1) }).map { [$0] } ?? []
         guard let code = s.map(\.code).max(by: { Wetter.schwere($0) < Wetter.schwere($1) }) else { return nil }
         let regen = s.reduce(0) { $0 + $1.regen }
         let chance = s.compactMap(\.chance).max() ?? 0
