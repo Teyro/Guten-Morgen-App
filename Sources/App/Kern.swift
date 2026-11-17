@@ -533,8 +533,18 @@ final class Kern {
     private func vorschauDaten() {
         let k = Zeit.kalender
         let heute = k.startOfDay(for: Date())
+        // 15-Minuten-Verlauf für heute und morgen: Regen um die 1. Pause (10–10:30), mittags trocken – zeigt beide Fälle
+        let verlauf = (0...1).flatMap { tag -> [WetterSchritt] in
+            let start = k.date(bySettingHour: 7, minute: 0, second: 0, of: k.date(byAdding: .day, value: tag, to: heute)!)!
+            return (0..<36).map { i in
+                let t = start.addingTimeInterval(Double(i) * 900)
+                let m = k.component(.hour, from: t) * 60 + k.component(.minute, from: t)
+                let nass = m > 600 && m <= 630
+                return WetterSchritt(zeit: t, code: nass ? 63 : 2, temp: 4 + Double(i) / 9, regen: nass ? 0.6 : 0, chance: nass ? 80 : 10, boeen: 20)
+            }
+        }
         wetter = Wetter(jetzt: 4, jetztCode: 3, heute: WetterTag(code: 61, max: 8, min: 2, regen: 70, wind: 20),
-                        morgen: WetterTag(code: 2, max: 10, min: 3, regen: 10, wind: 15), stand: Date())
+                        morgen: WetterTag(code: 2, max: 10, min: 3, regen: 10, wind: 15), stand: Date(), verlauf: verlauf)
         termine = [Termin(titel: "Dienstbesprechung", start: k.date(bySettingHour: 7, minute: 30, second: 0, of: k.date(byAdding: .day, value: 1, to: heute)!)!, ganztags: false),
                    Termin(titel: "Zahnarzt", start: k.date(bySettingHour: 15, minute: 30, second: 0, of: heute)!, ganztags: false)]
         erinnerungen = ["Elternbriefe kopieren"]
