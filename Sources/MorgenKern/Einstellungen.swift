@@ -85,6 +85,10 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var mitteilungen = false
     /// Mitteilung, wenn der Vertretungsplan mich betrifft (Vertretung/Aufsicht/fehlend)
     public var vertretungMelden = false
+    /// Mitteilung, sobald der Vertretungsplan für den nächsten Schultag da ist
+    public var vertretungDa = false
+    /// Vertretungs-Mitteilungen als „dringend“ (zeitkritisch: kommen auch im Fokus durch)
+    public var vertretungDringend = false
     /// „Morgen mitnehmen“: Sport-/Schwimmsachen aus dem Stundenplan + Wetter
     public var mitnehmen = true
     /// Schulweiter Kalender (ICS/webcal) – zeigt kommende Schultermine
@@ -154,7 +158,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
-             mitteilungen, vertretungMelden, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
+             mitteilungen, vertretungMelden, vertretungDa, vertretungDringend, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
              untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
     }
@@ -183,7 +187,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         stoerungQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .stoerungQuelle)) ?? nil
         aufgaben = w(.aufgaben, s.aufgaben); aufgabenFarbe = w(.aufgabenFarbe, s.aufgabenFarbe)
         mitteilungen = w(.mitteilungen, s.mitteilungen)
-        vertretungMelden = w(.vertretungMelden, s.vertretungMelden); mitnehmen = w(.mitnehmen, s.mitnehmen)
+        vertretungMelden = w(.vertretungMelden, s.vertretungMelden); vertretungDa = w(.vertretungDa, s.vertretungDa)
+        vertretungDringend = w(.vertretungDringend, s.vertretungDringend); mitnehmen = w(.mitnehmen, s.mitnehmen)
         schulKalender = w(.schulKalender, s.schulKalender); gehaltErinnern = w(.gehaltErinnern, s.gehaltErinnern); gehaltTag = w(.gehaltTag, s.gehaltTag)
         gehaltAuto = w(.gehaltAuto, s.gehaltAuto); kachelReihenfolge = w(.kachelReihenfolge, s.kachelReihenfolge); kachelAus = w(.kachelAus, s.kachelAus)
         nachtlampe = w(.nachtlampe, s.nachtlampe); nachtlampeHelligkeit = w(.nachtlampeHelligkeit, s.nachtlampeHelligkeit)

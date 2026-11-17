@@ -35,6 +35,16 @@ public struct BriefingDaten: Sendable {
 }
 
 public enum Briefing {
+    /// „Hofaufsicht: erste Pause vermutlich Regenpause, zweite Pause trocken.“ – nur Pausen mit eigener Aufsicht, leer ohne Daten
+    public static func aufsichtWetter(_ bloecke: [Block], _ w: Wetter) -> String {
+        let teile = bloecke.filter { $0.art == .aufsicht }.compactMap { b -> String? in
+            guard let p = w.pause(von: b.von, bis: b.bis) else { return nil }
+            let name = b.name.hasPrefix("1") ? "erste Pause" : b.name.hasPrefix("2") ? "zweite Pause" : b.titel
+            return p.drinnen ? "\(name) vermutlich \(p.text)" : "\(name) \(p.text)"
+        }
+        return teile.isEmpty ? "" : "Hofaufsicht: " + teile.joined(separator: ", ") + "."
+    }
+
     static func aufzaehlen(_ t: [String]) -> String {
         t.count <= 1 ? (t.first ?? "") : t.dropLast().joined(separator: ", ") + " und " + t.last!
     }
@@ -85,6 +95,7 @@ public enum Briefing {
             // Stundenplan enthält Vertretungen und Aufsichten schon – nur „fehlend“/„außer Haus“ extra
             if let v = d.vertretung, v.fehlt || v.ausserHaus { schule.append(v.fehlt ? "Du bist als fehlend eingetragen." : "Du bist außer Haus eingetragen.") }
             schule.append(Stundenplan.satz(d.schultag))
+            if let w = d.wetter { let s = Briefing.aufsichtWetter(d.schultag, w); if !s.isEmpty { schule.append(s) } }
             if d.mitnehmen {
                 let satz = Mitnehmen.satz(d.schultag, wetter: schuleHeute ? d.wetter?.heute : d.wetter?.morgen, wann: "")
                 if !satz.isEmpty { schule.append(satz) }

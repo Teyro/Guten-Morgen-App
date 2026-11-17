@@ -450,10 +450,10 @@ final class Kern {
                 d.set(Date().timeIntervalSince1970, forKey: "aufgabenGeladen")
             } catch { aufgabenFehler = error.localizedDescription }
         }
-        if e.mitteilungen || e.vertretungMelden {
+        if e.mitteilungen || e.vertretungMelden || e.vertretungDa {
             Melder.pruefen(stoerungen: e.mitteilungen && e.stoerungen ? stoerungen : nil,
                            aufgaben: e.mitteilungen && e.aufgaben ? aufgaben : nil,
-                           vertretung: e.vertretungMelden ? vertretung : nil)
+                           vertretung: vertretung, planDa: e.vertretungDa, betrifft: e.vertretungMelden, dringend: e.vertretungDringend)
         }
         GehaltErinnerung.planen(an: e.gehaltErinnern, tag: e.gehaltTag)
         await untisLaden(erzwingen: erzwingen)

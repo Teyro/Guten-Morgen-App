@@ -89,3 +89,83 @@ final class StartseiteTests: XCTestCase {
         XCTAssertFalse(Startseite.vollstaendig(["schule", "gibtsnicht"], inDerSchule: true).contains("gibtsnicht"))
     }
 }
+
+final class PausenWetterTests: XCTestCase {
+    /// Open-Meteo-Antwort wie echt: 1. Pause (10:00–10:25) Regen, 2. Pause (11:55–12:20) trocken
+    private func wetter() -> Wetter {
+        let zeiten = ["2026-11-17T10:00", "2026-11-17T10:15", "2026-11-17T10:30", "2026-11-17T11:45", "2026-11-17T12:00", "2026-11-17T12:15", "2026-11-17T12:30"]
+        let json: [String: Any] = [
+            "minutely_15": ["time": zeiten,
+                            "weather_code": [3, 61, 63, 2, 1, 1, 61],   // 12:30 regnet es wieder – liegt aber nach der 2. Pause
+                            "temperature_2m": [6.0, 5.5, 5.4, 7.0, 7.2, 7.4, 7.0],
+                            "precipitation": [0.0, 0.4, 0.6, 0.0, 0.0, 0.0, 0.8],
+                            "wind_gusts_10m": [20, 25, 30, 15, 15, 18, 22]],
+            "hourly": ["time": ["2026-11-17T10:00", "2026-11-17T11:00", "2026-11-17T12:00"], "precipitation_probability": [80, 20, 10]],
+        ]
+        return Wetter.lesen(json)
+    }
+    private func zeit(_ h: Int, _ m: Int) -> Date { Zeit.kalender.date(from: DateComponents(year: 2026, month: 11, day: 17, hour: h, minute: m))! }
+
+    func testRegenpauseUndTrocken() {
+        let w = wetter()
+        XCTAssertEqual(w.verlauf?.count, 7)
+        let erste = w.pause(von: zeit(10, 0), bis: zeit(10, 25))!
+        XCTAssertTrue(erste.drinnen)
+        XCTAssertEqual(erste.text, "Regenpause")
+        XCTAssertEqual(erste.symbol, "cloud.rain.fill")
+        let zweite = w.pause(von: zeit(11, 55), bis: zeit(12, 20))!
+        XCTAssertFalse(zweite.drinnen)
+        XCTAssertEqual(zweite.text, "trocken")
+        XCTAssertNil(w.pause(von: zeit(15, 0), bis: zeit(15, 25)))   // keine Daten → nichts anzeigen
+    }
+
+    func testGewitterUndSchnee() {
+        let s = { (code: Int, mm: Double) in WetterSchritt(zeit: self.zeit(10, 15), code: code, temp: 1, regen: mm, chance: 30, boeen: 20) }
+        func p(_ x: WetterSchritt) -> PausenWetter { Wetter(jetzt: nil, jetztCode: nil, heute: nil, morgen: nil, stand: Date(), verlauf: [x]).pause(von: zeit(10, 0), bis: zeit(10, 25))! }
+        XCTAssertEqual(p(s(95, 0)).text, "Gewitter – Regenpause")
+        XCTAssertFalse(p(s(73, 0.8)).drinnen)          // Schnee: meist trotzdem raus
+        XCTAssertTrue(p(s(75, 2.0)).drinnen)           // starker Schneefall
+        XCTAssertTrue(p(WetterSchritt(zeit: zeit(10, 15), code: 2, temp: 8, regen: 0, chance: 0, boeen: 80)).drinnen)  // Sturm
+    }
+
+    func testBriefingNurEigeneAufsicht() {
+        let w = wetter()
+        let bloecke = [
+            Block(name: "1. Pause", von: zeit(10, 0), bis: zeit(10, 25), art: .aufsicht, text: "Aufsicht Hof"),
+            Block(name: "2. Pause", von: zeit(11, 55), bis: zeit(12, 20), art: .aufsicht, text: "Aufsicht Mensa"),
+        ]
+        XCTAssertEqual(Briefing.aufsichtWetter(bloecke, w), "Hofaufsicht: erste Pause vermutlich Regenpause, zweite Pause trocken.")
+        XCTAssertEqual(Briefing.aufsichtWetter([Block(name: "1. Pause", von: zeit(10, 0), bis: zeit(10, 25), art: .pause, text: "Pause")], w), "")
+    }
+}
+
+final class VertretungsMeldungTests: XCTestCase {
+    private func plan(_ datum: String, stunden: [VertretungsPlan.Stunde] = []) -> VertretungsPlan {
+        var p = VertretungsPlan(); p.datum = datum; p.stunden = stunden; return p
+    }
+
+    func testNeuerPlanMitUndOhneEigeneEintraege() {
+        // erster Lauf: nur merken
+        let a = VertretungsMeldung.pruefen(plan("2026-11-17"), altDatum: nil, altSig: nil, planDa: true, betrifft: true)!
+        XCTAssertNil(a.meldung)
+        // neuer Tag (18.11. = Mittwoch), nichts für mich
+        let b = VertretungsMeldung.pruefen(plan("2026-11-18"), altDatum: a.datum, altSig: a.sig, planDa: true, betrifft: true)!
+        XCTAssertEqual(b.meldung?.titel, "Vertretungsplan für Mittwoch ist da")
+        XCTAssertEqual(b.meldung?.text, "Keine Vertretung für dich.")
+        // neuer Tag mit Vertretung: eine Mitteilung (nicht zusätzlich „betrifft dich“)
+        let c = VertretungsMeldung.pruefen(plan("2026-11-19", stunden: [.init(stunde: "3", klasse: "2c")]), altDatum: b.datum, altSig: b.sig, planDa: true, betrifft: true)!
+        XCTAssertEqual(c.meldung?.text, "3. Vertretung 2c")
+        XCTAssertEqual(c.meldung?.id, "vertretung-plan-2026-11-19")
+        // gleicher Tag, Plan geändert und betrifft mich: „betrifft dich“
+        let d = VertretungsMeldung.pruefen(plan("2026-11-19", stunden: [.init(stunde: "3", klasse: "2c"), .init(stunde: "5", klasse: "4a")]), altDatum: c.datum, altSig: c.sig, planDa: true, betrifft: true)!
+        XCTAssertEqual(d.meldung?.titel, "Vertretungsplan betrifft dich")
+        // unverändert: nichts
+        XCTAssertNil(VertretungsMeldung.pruefen(plan("2026-11-19", stunden: [.init(stunde: "3", klasse: "2c"), .init(stunde: "5", klasse: "4a")]), altDatum: d.datum, altSig: d.sig, planDa: true, betrifft: true)!.meldung)
+    }
+
+    func testNurBetrifftOhnePlanDa() {
+        let a = VertretungsMeldung.pruefen(plan("2026-11-17"), altDatum: "2026-11-16", altSig: "x", planDa: false, betrifft: true)!
+        XCTAssertNil(a.meldung)   // neuer Plan ohne eigene Einträge, „Plan ist da“ aus → still
+        XCTAssertNil(VertretungsMeldung.pruefen(VertretungsPlan(), altDatum: nil, altSig: nil, planDa: true, betrifft: true))  // ohne Datum
+    }
+}

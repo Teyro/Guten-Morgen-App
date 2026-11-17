@@ -348,7 +348,10 @@ struct SchuleKarte: View {
             if !tag.isEmpty {
                 Button { oeffne(.stundenplan) } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(tag, id: \.von) { b in StundenZeile(b: b) }
+                        ForEach(tag, id: \.von) { b in
+                            // Pausen und Hofaufsicht: Wetter genau für diese Pause (15-Minuten-Prognose)
+                            StundenZeile(b: b, wetter: b.art == .pause || b.art == .aufsicht ? kern.wetter?.pause(von: b.von, bis: b.bis) : nil)
+                        }
                     }
                 }.buttonStyle(.plain)
             }
@@ -570,14 +573,19 @@ struct EinstellungenAnsicht: View {
                 TextField("Freigabe-Link (https://…/s/…)", text: $k.einstellungen.vertretungLink).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Freigabe-Passwort (falls gesetzt)", text: $k.freigabePasswort)
                 TextField("Kürzel, z. B. Sta", text: $k.einstellungen.kuerzel).textInputAutocapitalization(.never)
+                Toggle("Mitteilung, sobald der neue Plan da ist", isOn: $k.einstellungen.vertretungDa)
+                    .onChange(of: kern.einstellungen.vertretungDa) { _, an in if an { Task { _ = await Melder.erlauben() } } }
                 Toggle("Mitteilung, wenn mich der Plan betrifft", isOn: $k.einstellungen.vertretungMelden)
                     .onChange(of: kern.einstellungen.vertretungMelden) { _, an in if an { Task { _ = await Melder.erlauben() } } }
+                if kern.einstellungen.vertretungDa || kern.einstellungen.vertretungMelden {
+                    Toggle("Als dringend melden (auch im Fokus)", isOn: $k.einstellungen.vertretungDringend)
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Häuser der Klassen").font(.subheadline)
                     TextEditor(text: $haeuserText).frame(minHeight: 80).font(.callout.monospaced()).textInputAutocapitalization(.never)
                         .onChange(of: haeuserText) { _, neu in k.einstellungen.haeuser = Vertretung.haeuser(text: neu) }
                 }
-            } header: { Text("Vertretung") } footer: { Text("Cloud-Ordner mit dem Vertretungsplan (Word-Dateien). Gelesen wird nur, was für dein Kürzel drinsteht – Stunden, Hofaufsicht und Hinweise. Häuser je Zeile, z. B. „Haus 1: 1a, 1b, 2a“: dann steht dabei, wohin du musst.") }
+            } header: { Text("Vertretung") } footer: { Text("Cloud-Ordner mit dem Vertretungsplan (Word-Dateien). Gelesen wird nur, was für dein Kürzel drinsteht – Stunden, Hofaufsicht und Hinweise. Häuser je Zeile, z. B. „Haus 1: 1a, 1b, 2a“: dann steht dabei, wohin du musst. „Neuer Plan da“ prüft im Hintergrund etwa alle 30 Minuten, morgens alle 5. „Dringend“ kommt auch im Fokus und in der Zusammenfassung sofort durch.") }
 
             Section {
                 NavigationLink {
@@ -852,6 +860,8 @@ struct WeckmusikAbschnitt: View {
 /// Ein Abschnitt des Schultags: Marke, Inhalt, Uhrzeit – ersetzte oder ausgefallene feste Stunde durchgestrichen, der Ersatz darunter
 struct StundenZeile: View {
     let b: Block
+    /// Wetter in dieser Pause (nur bei Pausen und Hofaufsicht) – Symbol rechts, „Regenpause“ darunter
+    var wetter: PausenWetter? = nil
     private var farbe: Color {
         switch b.art {
         case .vertretung: return .purple
@@ -876,8 +886,20 @@ struct StundenZeile: View {
                 Text(b.art == .aufsicht ? (b.text.hasPrefix("Reserve") ? "Aufsicht (Reserve) · " : "Hofaufsicht · ") + b.text.replacingOccurrences(of: "Aufsicht ", with: "").replacingOccurrences(of: "Reserve ", with: "") : b.text)
                     .font(.body.weight(.semibold)).foregroundStyle(b.art == .frei || b.art == .pause ? Color.secondary : Color.primary)
                 Text(Zeit.uhrzeit(b.von) + "–" + Zeit.uhrzeit(b.bis)).font(.caption).foregroundStyle(.secondary)
+                if let w = wetter {
+                    Label(w.text, systemImage: w.drinnen ? "umbrella.fill" : "figure.walk")
+                        .font(.caption.weight(.semibold)).foregroundStyle(w.drinnen ? Color.blue : Color.secondary)
+                }
             }
             Spacer(minLength: 0)
+            if let w = wetter {
+                VStack(spacing: 0) {
+                    Image(systemName: w.symbol).symbolRenderingMode(.multicolor).font(.title2)
+                    if let t = w.temp { Text("\(Int(t.rounded()))°").font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.secondary) }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Wetter in der Pause: \(w.text)")
+            }
         }
         // Hinterlegung ragt nach außen, damit Marke und Text bündig mit den anderen Zeilen bleiben
         .background {

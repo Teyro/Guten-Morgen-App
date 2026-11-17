@@ -5,18 +5,18 @@ import MorgenKern
 /// Mitteilungen bei neuen Störungsmeldungen und neuen bzw. verschobenen Edupool-Aufgaben.
 /// Geprüft wird beim Laden im Widget (läuft regelmäßig im Hintergrund); beim allerersten Mal wird nur gemerkt.
 enum Melder {
-    static func pruefen(stoerungen: StoerungenStand?, aufgaben: AufgabenStand?, vertretung: VertretungsPlan? = nil, _ d: UserDefaults = .standard) {
-        // Vertretungsplan betrifft mich: eine zusammengefasste Mitteilung, sobald sich meine Einträge ändern
-        if let v = vertretung, let datum = v.datum {
-            let meine = v.stunden.map { ($0.stunde.isEmpty ? "" : "\($0.stunde). ") + "Vertretung \($0.klasse)" }
-                + v.pausen.map { "\($0.reserve ? "Reserve" : "Aufsicht") \($0.pause) · \($0.ort)" }
-                + (v.fehlt ? ["Du bist als fehlend eingetragen"] : [])
-                + (v.ausserHaus ? ["Du bist außer Haus eingetragen"] : [])
-            let sig = datum + "|" + meine.sorted().joined(separator: ";")
-            let alt = d.string(forKey: "gemeldetVertretung")
-            d.set(sig, forKey: "gemeldetVertretung")
-            if let alt, alt != sig, !meine.isEmpty {
-                melde(id: "vertretung-tag", titel: "Vertretungsplan betrifft dich", text: meine.prefix(3).joined(separator: " · "), link: "gutenmorgen://vertretung")
+    /// [vertretung]: Plan prüfen (siehe VertretungsMeldung); [planDa] = melden, sobald der Plan für einen neuen Tag da ist,
+    /// [betrifft] = melden, wenn sich die eigenen Einträge ändern, [dringend] = zeitkritisch (kommt auch im Fokus durch).
+    static func pruefen(stoerungen: StoerungenStand?, aufgaben: AufgabenStand?, vertretung: VertretungsPlan? = nil,
+                        planDa: Bool = false, betrifft: Bool = false, dringend: Bool = false, _ d: UserDefaults = .standard) {
+        // Merkstand in der App Group: App und Widget prüfen beide – so meldet nur, wer es zuerst sieht
+        if let v = vertretung, planDa || betrifft {
+            let g = MorgenEinstellungen.defaults
+            if let r = VertretungsMeldung.pruefen(v, altDatum: g.string(forKey: "gemeldetPlanDatum"), altSig: g.string(forKey: "gemeldetVertretung"),
+                                                  planDa: planDa, betrifft: betrifft) {
+                g.set(r.datum, forKey: "gemeldetPlanDatum")
+                g.set(r.sig, forKey: "gemeldetVertretung")
+                if let m = r.meldung { melde(id: m.id, titel: m.titel, text: m.text, link: "gutenmorgen://vertretung", dringend: dringend) }
             }
         }
         if let s = stoerungen {
@@ -59,8 +59,10 @@ enum Melder {
     /// Gleiche Eingabe → gleiche Zahl in App und Widget (hashValue ist je Prozess anders) – gleiche Mitteilung ersetzt sich
     private static func stabil(_ s: String) -> UInt64 { s.utf8.reduce(5381) { ($0 << 5) &+ $0 &+ UInt64($1) } }
 
-    private static func melde(id: String, titel: String, text: String, link: String) {
+    private static func melde(id: String, titel: String, text: String, link: String, dringend: Bool = false) {
         let c = UNMutableNotificationContent()
+        // zeitkritisch: durchbricht Fokus und Zusammenfassung (braucht das Recht „Time Sensitive“; fehlt es, kommt sie normal)
+        if dringend { c.interruptionLevel = .timeSensitive }
         c.title = titel
         c.body = text
         c.sound = .default

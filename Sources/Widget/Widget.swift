@@ -172,7 +172,11 @@ struct MorgenZeitleiste: TimelineProvider {
             d.set(jetzt.timeIntervalSince1970, forKey: "aufgabenStand")
             if let st = try? await Aufgaben.laden(token: geheim.edupool, farbe: e.aufgabenFarbe) { auf = st; d.set(try? JSONEncoder().encode(st), forKey: "aufgaben") }
         }
-        if e.mitteilungen { Melder.pruefen(stoerungen: e.stoerungen ? stoe : nil, aufgaben: e.aufgaben ? auf : nil) }
+        // Läuft regelmäßig im Hintergrund – hier kommt auch „Vertretungsplan ist da“, wenn die App zu ist
+        if e.mitteilungen || e.vertretungMelden || e.vertretungDa {
+            Melder.pruefen(stoerungen: e.mitteilungen && e.stoerungen ? stoe : nil, aufgaben: e.mitteilungen && e.aufgaben ? auf : nil,
+                           vertretung: plan, planDa: e.vertretungDa, betrifft: e.vertretungMelden, dringend: e.vertretungDringend)
+        }
         // Standort (falls erlaubt): in der Schule die Schul-Infos, zu Hause und am Wochenende Termine und Post zuerst
         var hier: Kontext.Ort?
         let ortung = CLLocationManager()
