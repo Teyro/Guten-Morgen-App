@@ -74,7 +74,10 @@ struct MensaAnsicht: View {
                     Toggle("Zusatzstoffe zeigen", isOn: $zusatz)
                     TextField("Lieblingsessen-Stichwörter, z. B. Pizza, Nudeln", text: $kern.einstellungen.favoriten)
                     TextField("Meiden, z. B. Schwein, Fisch", text: $kern.einstellungen.meiden)
-                    Text("Gemerkt: \(e.lieblingsGerichte.count)× ⭐, \(e.nichtLecker.count)× 👎 – wischen zum Merken.").font(.caption).foregroundStyle(.secondary)
+                    NavigationLink { GemerktAnsicht(kern: kern) } label: {
+                        Label("Gemerkte Gerichte: \(e.lieblingsGerichte.count)× ⭐, \(e.nichtLecker.count)× 👎", systemImage: "list.star").font(.callout)
+                    }
+                    Text("⭐ oder 👎 antippen zum Merken, noch einmal antippen zum Abwählen.").font(.caption).foregroundStyle(.secondary)
                     if let u = URL(string: e.mensaAdresse), !e.mensaAdresse.isEmpty {
                         Link(destination: u) { Label("Im Kantinen-Portal bestellen", systemImage: "cart.fill").font(.headline).frame(maxWidth: .infinity, minHeight: 46) }
                             .foregroundStyle(.white).background(LinearGradient(colors: [Color(red: 1, green: 0.64, blue: 0.28), Kantine.akzent], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -171,9 +174,16 @@ struct MensaAnsicht: View {
                     }
                 }
                 Spacer(minLength: 0)
-                VStack(spacing: 4) {
-                    if istGut { Text("⭐") }
-                    if istSchlecht { Text("👎") }
+                // Antippen: merken bzw. wieder abwählen (Wischen geht weiterhin)
+                VStack(spacing: 6) {
+                    Button { merken(g, gut: true) } label: {
+                        Text("⭐").font(.title3).opacity(gut.contains(g.schluessel) ? 1 : (istGut ? 0.6 : 0.25))
+                            .frame(width: 40, height: 34).background(gut.contains(g.schluessel) ? Color.yellow.opacity(0.25) : .clear, in: Capsule())
+                    }.buttonStyle(.plain).accessibilityLabel(gut.contains(g.schluessel) ? "Lieblingsessen abwählen" : "Als Lieblingsessen merken")
+                    Button { merken(g, gut: false) } label: {
+                        Text("👎").font(.title3).opacity(schlecht.contains(g.schluessel) ? 1 : (istSchlecht ? 0.6 : 0.25))
+                            .frame(width: 40, height: 34).background(schlecht.contains(g.schluessel) ? Color.red.opacity(0.22) : .clear, in: Capsule())
+                    }.buttonStyle(.plain).accessibilityLabel(schlecht.contains(g.schluessel) ? "„Nicht lecker“ abwählen" : "Als nicht lecker merken")
                 }
             }
             .padding(12)
@@ -272,5 +282,30 @@ struct VertretungAnsicht: View {
             Text(k).font(.body.weight(.bold)).frame(width: 56, alignment: .leading)
             Text(e.kollegium.first { $0.key.caseInsensitiveCompare(k) == .orderedSame }?.value ?? "").foregroundStyle(.secondary)
         }
+    }
+}
+
+
+/// Gemerkte Gerichte: Lieblingsessen und „nicht lecker“ – einzeln abwählen (Wischen oder Bearbeiten) oder alle löschen
+struct GemerktAnsicht: View {
+    @Bindable var kern: Kern
+    var body: some View {
+        List {
+            Section {
+                if kern.einstellungen.lieblingsGerichte.isEmpty { Text("Noch keine.").foregroundStyle(.secondary) }
+                ForEach(kern.einstellungen.lieblingsGerichte, id: \.self) { Text("⭐ " + $0) }
+                    .onDelete { kern.einstellungen.lieblingsGerichte.remove(atOffsets: $0) }
+            } header: { Text("Lieblingsessen") }
+            Section {
+                if kern.einstellungen.nichtLecker.isEmpty { Text("Noch keine.").foregroundStyle(.secondary) }
+                ForEach(kern.einstellungen.nichtLecker, id: \.self) { Text("👎 " + $0) }
+                    .onDelete { kern.einstellungen.nichtLecker.remove(atOffsets: $0) }
+            } header: { Text("Nicht lecker") }
+            if !kern.einstellungen.lieblingsGerichte.isEmpty || !kern.einstellungen.nichtLecker.isEmpty {
+                Section { Button("Alle abwählen", role: .destructive) { kern.einstellungen.lieblingsGerichte = []; kern.einstellungen.nichtLecker = [] } }
+            }
+        }
+        .navigationTitle("Gemerkte Gerichte")
+        .toolbar { EditButton() }
     }
 }
