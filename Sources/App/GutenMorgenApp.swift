@@ -50,6 +50,7 @@ struct GutenMorgenApp: App {
                     if !kern.vorschau { Uhr.shared.starten(kern) }
                     AppDelegate.oeffnen = { u in kern.bereich = Bereich(rawValue: u.host ?? "") }
                     if kern.vorschau, ProcessInfo.processInfo.environment["GM_ANSICHT"] == "einstellungen" { kern.einstellungenOffen = true }
+                    if kern.vorschau, ProcessInfo.processInfo.environment["GM_ANSICHT"] == "stoerungen" { kern.bereich = .stoerungen }
                 }
         }
     }

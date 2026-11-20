@@ -572,6 +572,12 @@ final class Kern {
         obstTage = [Zeit.iso(schulTag)]
         schlaf = 7 * 3600 + 12 * 60
         weckerText = "Wecker gestellt: Dienstag, 06:15 Uhr"
+        stoerungen = StoerungenStand(meldungen: [
+            Stoerung(titel: "Beamer flackert", inhalt: "Der Beamer in der 2b flackert nach 10 Minuten.", autor: "Kim Muster", bearbeiter: "", datum: Date().addingTimeInterval(-3600 * 3), status: "Neu", ort: "Raum 2b", erledigt: false, unbesetzt: true, url: ""),
+            Stoerung(titel: "WLAN im Haus 2 langsam", inhalt: "", autor: "Alex Beispiel", bearbeiter: "IT-Team", datum: Date().addingTimeInterval(-86400), status: "In Bearbeitung", ort: "Haus 2", erledigt: false, unbesetzt: false, url: ""),
+            Stoerung(titel: "Drucker Lehrerzimmer Papierstau", inhalt: "", autor: "Kim Muster", bearbeiter: "IT-Team", datum: Date().addingTimeInterval(-86400 * 3), status: "Erledigt", ort: "Lehrerzimmer", erledigt: true, unbesetzt: false, url: ""),
+        ])
+        einstellungen.stoerungen = true; einstellungen.erledigteZeigen = true
     }
 }
 

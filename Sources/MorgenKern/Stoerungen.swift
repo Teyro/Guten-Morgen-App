@@ -14,6 +14,11 @@ public struct Stoerung: Codable, Hashable, Sendable {
     public var unbesetzt: Bool
     public var url: String
 
+    public init(titel: String, inhalt: String, autor: String, bearbeiter: String, datum: Date?, status: String, ort: String, erledigt: Bool, unbesetzt: Bool, url: String) {
+        self.titel = titel; self.inhalt = inhalt; self.autor = autor; self.bearbeiter = bearbeiter; self.datum = datum
+        self.status = status; self.ort = ort; self.erledigt = erledigt; self.unbesetzt = unbesetzt; self.url = url
+    }
+
     public var uebernommen: Bool { !erledigt && (!bearbeiter.isEmpty || !unbesetzt) }
     /// „🛠 in Arbeit (Kim)“ bzw. „🆕 noch niemand“
     public var zustand: String {

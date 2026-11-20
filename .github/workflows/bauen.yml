@@ -38,7 +38,7 @@ jobs:
           mkdir -p bilder-ci
           for m in light dark; do
             xcrun simctl ui "$GERAET" appearance $m
-            for a in heute einstellungen; do
+            for a in heute einstellungen stoerungen; do
               SIMCTL_CHILD_GM_ANSICHT=$a xcrun simctl launch --terminate-running-process "$GERAET" de.teyro.gutenmorgen --vorschau
               sleep 7
               xcrun simctl io "$GERAET" screenshot "bilder-ci/${m}_$a.png"
