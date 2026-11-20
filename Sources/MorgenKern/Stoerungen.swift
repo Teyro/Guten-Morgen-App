@@ -125,3 +125,95 @@ public enum Stoerungen {
         return nil
     }
 }
+
+// MARK: Verlauf einer Meldung (Detailseite in IServ) und Antworten
+
+/// Gesprächsverlauf einer Störungsmeldung und – falls IServ eins anbietet – das Formular zum Antworten
+public struct StoerungVerlauf: Sendable {
+    public struct Eintrag: Hashable, Sendable {
+        public var autor: String
+        public var zeit: String
+        public var text: String
+    }
+    public struct Formular: Sendable {
+        public var aktion: String
+        public var felder: [(String, String)]
+        public var textFeld: String
+    }
+    public var eintraege: [Eintrag]
+    public var formular: Formular?
+}
+
+extension Stoerungen {
+    static let eintragMuster = #"<(div|li|article|section|tr)\b[^>]*class=["'][^"']*\b(comment|kommentar|reply|antwort|answer|message|nachricht|history|verlauf|activity|timeline-item|post)[^"']*["'][^>]*>"#
+
+    /// Detailseite laden (abgelaufene Sitzung → neu anmelden) und lesen
+    public static func verlauf(_ s: IServ, url: String) async throws -> StoerungVerlauf {
+        try s.hostPruefen(url)
+        let seite = try await s.lade(IServQuelle(url: url, art: "direkt"))
+        return verlaufAus(seite.body, von: seite.url)
+    }
+
+    /// Antwort über das Formular der Detailseite schicken (nur an IServ selbst)
+    public static func antworten(_ s: IServ, formular f: StoerungVerlauf.Formular, text: String) async throws {
+        guard f.aktion.lowercased().hasPrefix("https:"), URL(string: f.aktion)?.host?.lowercased() == s.zugang.server else { throw IServFehler.allgemein("Antworten geht nur direkt an IServ.") }
+        let felder = f.felder.filter { $0.0 != f.textFeld } + [(f.textFeld, text)]
+        let antwort = try await s.anfrage(f.aktion, methode: "POST", kopf: ["Referer": f.aktion], felder: felder)
+        guard (200..<400).contains(antwort.status), !IServ.istLoginSeite(antwort) else { throw IServFehler.allgemein("Antwort nicht gesendet (HTTP \(antwort.status)).") }
+    }
+
+    public static func verlaufAus(_ html: String, von: String) -> StoerungVerlauf {
+        let ohneSkript = html.replacingOccurrences(of: #"<script[\s\S]*?</script>|<style[\s\S]*?</style>|<nav[\s\S]*?</nav>|<header[\s\S]*?</header>|<footer[\s\S]*?</footer>"#,
+                                                   with: " ", options: [.regularExpression, .caseInsensitive])
+        // Formular mit Textfeld = Antworten
+        var formular: StoerungVerlauf.Formular?
+        for f in HTML.formulare(ohneSkript) {
+            guard let ta = HTML.erster(#"(<textarea\b[^>]*>)"#, f), !HTML.name(ta).isEmpty else { continue }
+            var felder: [(String, String)] = []
+            for i in HTML.eingaben(f) {
+                let n = HTML.name(i), t = HTML.typ(i)
+                guard !n.isEmpty, !["submit", "button", "file", "image", "reset"].contains(t) else { continue }
+                if (t == "checkbox" || t == "radio") && i.range(of: #"\bchecked\b"#, options: [.regularExpression, .caseInsensitive]) == nil { continue }
+                felder.append((n, HTML.entities(HTML.attr(i, "value") ?? "")))
+            }
+            // benannter Absende-Knopf (Symfony-Formulare erwarten ihn mitunter)
+            if let k = HTML.erster(#"(<button\b[^>]*type=["']submit["'][^>]*>)"#, f) ?? HTML.erster(#"(<input\b[^>]*type=["']submit["'][^>]*>)"#, f), !HTML.name(k).isEmpty {
+                felder.append((HTML.name(k), HTML.entities(HTML.attr(k, "value") ?? "")))
+            }
+            let aktion = HTML.entities(HTML.attr(HTML.erster(#"(<form\b[^>]*>)"#, f) ?? "", "action") ?? "")
+            formular = .init(aktion: aktion.isEmpty ? von : HTML.absolut(aktion, von: von), felder: felder, textFeld: HTML.name(ta))
+            break
+        }
+        let ohneFormulare = ohneSkript.replacingOccurrences(of: #"<form[\s\S]*?</form>"#, with: " ", options: [.regularExpression, .caseInsensitive])
+        // Einträge: Blöcke mit „comment/reply/…“ in der Klasse bis zum nächsten solchen Block
+        let ns = ohneFormulare as NSString
+        let starts = HTML.alleI(eintragMuster, ohneFormulare).map(\.range.location)
+        var eintraege: [StoerungVerlauf.Eintrag] = []
+        for (n, start) in starts.enumerated() {
+            let ende = n + 1 < starts.count ? starts[n + 1] : min(ns.length, start + 6000)
+            let block = ns.substring(with: NSRange(location: start, length: max(0, ende - start)))
+            let autor = HTML.text(HTML.erster(#"class=["'][^"']*\b(?:author|autor|user|username|name|creator)\b[^"']*["'][^>]*>([\s\S]*?)</"#, block) ?? "")
+            let zeit = HTML.text(HTML.erster(#"<time\b[^>]*>([\s\S]*?)</time>"#, block) ?? HTML.erster(#"(\d{1,2}\.\d{1,2}\.\d{2,4}(?:,?\s*\d{1,2}:\d{2})?)"#, block) ?? "")
+            var text = absatzText(block)
+            for weg in [autor, zeit] where !weg.isEmpty { text = text.replacingOccurrences(of: weg, with: "") }
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty, !eintraege.contains(where: { $0.text == text }) { eintraege.append(.init(autor: HTML.nameSchoen(autor), zeit: zeit, text: text)) }
+        }
+        // Nichts erkannt: der ganze Inhaltsbereich als ein Eintrag
+        if eintraege.isEmpty {
+            let inhalt = HTML.erster(#"<main\b[^>]*>([\s\S]*?)</main>"#, ohneFormulare) ?? HTML.erster(#"<div[^>]*id=["']content["'][^>]*>([\s\S]*)"#, ohneFormulare) ?? ohneFormulare
+            let t = absatzText(inhalt)
+            if !t.isEmpty { eintraege.append(.init(autor: "", zeit: "", text: String(t.prefix(8000)))) }
+        }
+        return StoerungVerlauf(eintraege: eintraege, formular: formular)
+    }
+
+    /// HTML → Text mit Absätzen (statt alles in einer Zeile)
+    static func absatzText(_ h: String) -> String {
+        var s = h.replacingOccurrences(of: #"<br\s*/?>|</p>|</div>|</li>|</h\d>|</tr>"#, with: "\n", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: #"<[^>]*>"#, with: " ", options: .regularExpression)
+        s = HTML.entities(s).replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: #" *\n[ \n]*"#, with: "\n", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

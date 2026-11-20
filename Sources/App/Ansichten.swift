@@ -1,4 +1,5 @@
 import SwiftUI
+import SafariServices
 import UniformTypeIdentifiers
 import MorgenKern
 
@@ -338,7 +339,7 @@ struct SchuleKarte: View {
 
     @ViewBuilder private var schultag: some View {
         let e = kern.einstellungen
-        Karte(symbol: "graduationcap.fill", farbe: .purple, titel: "Schule " + kern.schulTagName) {
+        Karte(symbol: "graduationcap.fill", farbe: .blue, titel: "Schule " + kern.schulTagName) {
             if !kern.anfahrtText.isEmpty {
                 Label(kern.anfahrtText, systemImage: e.fahrtArt == "oepnv" ? "tram.fill" : e.fahrtArt == "fuss" ? "figure.walk" : "car.fill").font(.callout.weight(.medium))
             }
@@ -417,7 +418,7 @@ struct SchuleKarte: View {
                     if mitStunden {
                     ForEach(p.stunden, id: \.self) { s in
                         let haus = Vertretung.haus(s.klasse, e.haeuser)
-                        Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .purple,
+                        Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .blue,
                               titel: "Vertretung \(s.klasse)", unter: haus.isEmpty ? (Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde) : "\(Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde) · \(haus)")
                     }
                     ForEach(p.pausen, id: \.self) { a in
@@ -479,6 +480,8 @@ struct EinstellungenAnsicht: View {
     @State private var haeuserText = ""
     @State private var scannen = false
     @Environment(\.openURL) private var oeffneURL
+    /// Edupool-Freigabeseite in der App (Safari-Ansicht) – die App bleibt dabei aktiv und holt die Freigabe sicher ab
+    @State private var freigabeSeite: WebSeite?
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
     /// Alle Kacheln in aktueller Reihenfolge (auch ausgeschaltete) zum Verschieben und Abschalten
@@ -740,17 +743,19 @@ struct EinstellungenAnsicht: View {
             } header: { Text("IServ") } footer: { Text("Wie in den Skripten Abwesenheiten und Störungen. Mit 2FA-Schlüssel (Text unter dem QR-Code beim Einrichten der Zwei-Faktor-Anmeldung) erzeugt die App die Codes selbst – sonst fragt sie danach, und das Widget zeigt nur den letzten Stand. Achtung: Passwort und zweiter Faktor liegen dann auf demselben Gerät. Abwesenheiten werden nur angezeigt, nicht ausgewertet.") }
 
             Section {
-                if kern.edupoolToken.isEmpty {
-                    Button(kern.edupoolCode == nil ? "Mit Edupool Boards verbinden" : "Warte auf Bestätigung (Code \(kern.edupoolCode!)) …") {
-                        if kern.edupoolCode == nil { Task { await kern.edupoolVerbinden { u in oeffneURL(u) } } }
-                    }
-                    if kern.edupoolCode != nil { Button("Abbrechen", role: .cancel) { kern.edupoolCode = nil } }
+                if kern.edupoolCode != nil {
+                    Button("Freigabeseite wieder öffnen (Code \(kern.edupoolCode!))") { if let u = kern.edupoolSeite { freigabeSeite = WebSeite(url: u) } }
+                    Button("Abbrechen", role: .cancel) { kern.edupoolCode = nil }
+                } else if kern.edupoolToken.isEmpty {
+                    Button("Mit Edupool Boards verbinden") { Task { await kern.edupoolVerbinden { u in freigabeSeite = WebSeite(url: u) } } }
                 } else {
                     Toggle("Aufgaben zeigen", isOn: $k.einstellungen.aufgaben)
                     TextField("Kartenfarbe deiner Aufgaben", text: $k.einstellungen.aufgabenFarbe).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("Neu verbinden") { Task { await kern.edupoolVerbinden { u in freigabeSeite = WebSeite(url: u) } } }
                     Button("Verbindung trennen", role: .destructive) { k.edupoolToken = ""; k.aufgaben = nil; k.einstellungen.aufgaben = false }
                 }
-            } header: { Text("Edupool-Aufgaben") } footer: { Text("Verbinden öffnet die Freigabeseite von Edupool Boards mit eingetragenem Code: anmelden, nur „Lesen“ anhaken, Laufzeit wählen (bis 90 Tage), bestätigen und zurück in die App. Dein Passwort sieht die App nie.") }
+            } header: { Text("Edupool-Aufgaben") } footer: { Text("Verbinden öffnet die Freigabeseite von Edupool Boards in der App, der Code ist schon eingetragen: anmelden, „Lesen“ anhaken – zum Antworten auf Karten auch „erstellen, ändern“ –, Laufzeit wählen (bis 90 Tage), bestätigen und die Seite schließen. Dein Passwort sieht die App nie.") }
+            .sheet(item: $freigabeSeite) { s in SafariSeite(url: s.url).ignoresSafeArea() }
 
             Section {
                 TextField("Name des Skripts", text: $k.einstellungen.meinTagSkript).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -864,10 +869,10 @@ struct StundenZeile: View {
     var wetter: PausenWetter? = nil
     private var farbe: Color {
         switch b.art {
-        case .vertretung: return .purple
+        // Wie in Apples Apps: Reguläres neutral, nur Abweichungen farbig (Vertretung blau, Aufsicht orange)
+        case .vertretung: return .blue
         case .aufsicht: return .orange
-        case .frei, .pause: return .gray
-        default: return .blue
+        default: return .gray
         }
     }
     /// Nicht regulär (Vertretung, Aufsicht, Entfall): Zeile farbig hinterlegt
@@ -914,4 +919,15 @@ struct StundenZeile: View {
         }
         .contentShape(Rectangle())
     }
+}
+
+
+/// Adresse für eine Safari-Ansicht als Blatt
+struct WebSeite: Identifiable { let url: URL; var id: String { url.absoluteString } }
+
+/// Safari in der App (Anmeldung, Cookies wie in Safari) – die App bleibt im Vordergrund
+struct SafariSeite: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
+    func updateUIViewController(_ c: SFSafariViewController, context: Context) {}
 }

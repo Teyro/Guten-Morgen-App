@@ -239,7 +239,7 @@ struct VertretungAnsicht: View {
                     if p.stunden.isEmpty && p.pausen.isEmpty && !p.fehlt { Label("Keine Vertretung, keine Aufsicht", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
                     ForEach(p.stunden, id: \.self) { s in
                         let h = Vertretung.haus(s.klasse, e.haeuser)
-                        Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .purple,
+                        Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .blue,
                               titel: "Vertretung \(s.klasse)", unter: [Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde, h].filter { !$0.isEmpty }.joined(separator: " · "))
                     }
                     ForEach(p.pausen, id: \.self) { a in
@@ -260,6 +260,9 @@ struct VertretungAnsicht: View {
                 Text(kern.vertretungFehler.isEmpty ? "Noch kein Vertretungsplan geladen." : kern.vertretungFehler).foregroundStyle(.secondary)
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Hintergrund(farbton: kern.farbton))
         .navigationTitle("Vertretung")
         .refreshable { await kern.aktualisieren() }
     }

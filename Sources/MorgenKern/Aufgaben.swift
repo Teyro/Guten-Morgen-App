@@ -19,6 +19,8 @@ public struct Aufgabe: Codable, Hashable, Identifiable, Sendable {
     public var spalte: String
     public var kategorie: Int
     public var sort: Double
+    /// Sichtbare Kommentare (für „neuer Kommentar“-Mitteilung); nil bei älteren gespeicherten Ständen
+    public var kommentarAnzahl: Int? = nil
 }
 
 /// Was das Laden ergibt (wird gespeichert, damit das Öffnen ohne Netz geht)
@@ -120,21 +122,56 @@ public enum Aufgaben {
                 let (titel, beschreibung) = textAus(k, inhalt)
                 aufgaben.append(Aufgabe(id: "\(id)", titel: titel, beschreibung: beschreibung, inhalt: inhalt,
                                         geaendert: zeit(k["updated_at"] ?? k["updatedAt"] ?? k["created_at"]),
-                                        board: b.id, boardTitel: b.titel, spalte: spalte, kategorie: kat, sort: zahl(k["sort_index"])))
+                                        board: b.id, boardTitel: b.titel, spalte: spalte, kategorie: kat, sort: zahl(k["sort_index"]),
+                                        kommentarAnzahl: Int(zahl(k["visible_comment_count"] ?? k["comment_count"] ?? k["comments_count"]))))
             }
         }
         return AufgabenStand(aufgaben: aufgaben, boards: boards.count)
     }
 
+    // MARK: Kommentare (Verlauf einer Karte, antworten braucht beim Verbinden „Schreiben“)
+
+    public struct Kommentar: Hashable, Identifiable, Sendable {
+        public var id: String
+        public var autor: String
+        public var text: String
+        public var zeit: Date?
+    }
+
+    public static func kommentare(token: String, karte: String) async throws -> [Kommentar] {
+        let (d, s) = try await anfrage("/api/cards/\(karte)/comments", token: token)
+        guard (200..<300).contains(s) else { throw Fehler.server("Kommentare nicht geladen (HTTP \(s)).") }
+        return kommentareAus(d)
+    }
+
+    /// Antwort schreiben; 403 = Freigabe nur zum Lesen
+    public static func antworten(token: String, karte: String, text: String) async throws {
+        let (_, s) = try await anfrage("/api/cards/\(karte)/comments", methode: "POST", koerper: ["content": text], token: token, schreiben: true)
+        if s == 403 { throw Fehler.verbinden("Zum Antworten bitte neu verbinden und dabei auch „Boards und Inhalte erstellen, ändern“ anhaken.") }
+        guard (200..<300).contains(s) else { throw Fehler.server("Antwort nicht gesendet (HTTP \(s)).") }
+    }
+
+    /// Älteste zuerst; Autor aus user/author (Name oder Anzeigename)
+    public static func kommentareAus(_ d: Any?) -> [Kommentar] {
+        liste(d).compactMap { k in
+            let text = reinerText((k["content"] as? String) ?? (k["text"] as? String) ?? (k["body"] as? String) ?? "")
+            guard !text.isEmpty else { return nil }
+            let u = (k["user"] as? [String: Any]) ?? (k["author"] as? [String: Any]) ?? [:]
+            let name = [u["display_name"], u["name"], u["username"], k["author_name"], k["user_name"], k["display_name"]]
+                .compactMap { $0 as? String }.first { !$0.isEmpty } ?? ""
+            return Kommentar(id: k["id"].map { "\($0)" } ?? UUID().uuidString, autor: name, text: text, zeit: zeit(k["created_at"] ?? k["createdAt"]))
+        }.sorted { ($0.zeit ?? .distantPast) < ($1.zeit ?? .distantPast) }
+    }
+
     // MARK: Hilfen (öffentlich für Tests)
 
-    static func anfrage(_ pfad: String, methode: String = "GET", koerper: [String: String]? = nil, token: String?) async throws -> (Any?, Int) {
+    static func anfrage(_ pfad: String, methode: String = "GET", koerper: [String: String]? = nil, token: String?, schreiben: Bool = false) async throws -> (Any?, Int) {
         var kopf = ["Accept": "application/json"]
         if koerper != nil { kopf["Content-Type"] = "application/json" }
         if let t = token { kopf["Authorization"] = "Bearer " + t }
         let (d, s) = try await Netz.daten(URL(string: basis + pfad)!, methode: methode, kopf: kopf, koerper: koerper.flatMap { try? JSONSerialization.data(withJSONObject: $0) }, zeit: 20)
         if token != nil && s == 401 { throw Fehler.verbinden("Die Freigabe ist abgelaufen oder wurde widerrufen – bitte neu verbinden.") }
-        if token != nil && s == 403 { throw Fehler.verbinden("Die Freigabe reicht nicht – beim Verbinden „Lesen“ und alle Boards wählen.") }
+        if token != nil && s == 403 && !schreiben { throw Fehler.verbinden("Die Freigabe reicht nicht – beim Verbinden „Lesen“ und alle Boards wählen.") }
         return (try? JSONSerialization.jsonObject(with: d), s)
     }
 

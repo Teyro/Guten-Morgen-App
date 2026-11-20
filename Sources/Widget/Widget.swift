@@ -196,7 +196,9 @@ struct MorgenWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "morgen", provider: MorgenZeitleiste()) { e in
             MorgenWidgetAnsicht(e: e).containerBackground(for: .widget) {
-                LinearGradient(colors: Farbton.zu(e.farbton).widget, startPoint: .topLeading, endPoint: .bottomTrailing)
+                // „System (wie Apple)“: neutraler System-Hintergrund wie Apples eigene Widgets (hell/dunkel, Liquid Glass übernimmt iOS)
+                if Farbton.zu(e.farbton).systemGrund { Color(uiColor: .secondarySystemGroupedBackground) }
+                else { LinearGradient(colors: Farbton.zu(e.farbton).widget, startPoint: .topLeading, endPoint: .bottomTrailing) }
             }
             .widgetURL(URL(string: "gutenmorgen://start"))
         }
@@ -218,13 +220,18 @@ struct MorgenWidgetAnsicht: View {
         return Zeit.kalender.isDateInToday(w.tag) ? "heute" : Zeit.kalender.isDateInTomorrow(w.tag) ? "morgen" : Zeit.wochentag(w.tag)
     }
     var schulTitel: String { "Schule " + e.schulName }
+    /// Systemfarben (Schrift dunkel/hell je nach Modus) oder weiße Schrift auf kräftigem Farbton
+    var system: Bool { Farbton.zu(e.farbton).systemGrund }
+    var schrift: Color { system ? .primary : .white }
+    var kastenGrund: AnyShapeStyle { system ? AnyShapeStyle(Color(uiColor: .tertiarySystemFill)) : AnyShapeStyle(Color.white.opacity(0.14)) }
+    var markeGrund: AnyShapeStyle { system ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(Color.white.opacity(0.22)) }
 
     var body: some View {
         if !e.eingerichtet {
             VStack(spacing: 6) {
                 Image(systemName: "sunrise.fill").font(.title)
                 Text("App öffnen – sie verbindet das Widget").font(.caption).multilineTextAlignment(.center)
-            }.foregroundStyle(.white)
+            }.foregroundStyle(schrift)
         } else {
             switch familie {
             #if os(iOS)
@@ -249,22 +256,22 @@ struct MorgenWidgetAnsicht: View {
     // MARK: Bausteine
 
     /// Ein klar abgegrenzter Kasten mit Kopfzeile; antippen öffnet den Bereich in der App
-    private func kasten<I: View>(_ titel: String, _ symbol: String, ziel: String, @ViewBuilder inhalt: () -> I) -> some View {
+    private func kasten<I: View>(_ titel: String, _ symbol: String, ziel: String, gleichHoch: Bool = false, @ViewBuilder inhalt: () -> I) -> some View {
         Link(destination: URL(string: "gutenmorgen://\(ziel)")!) {
             VStack(alignment: .leading, spacing: 3) {
-                Label(titel, systemImage: symbol).font(.system(size: 10, weight: .bold)).textCase(.uppercase).opacity(0.75)
+                Label(titel, systemImage: symbol).font(.system(size: 10, weight: .bold)).textCase(.uppercase).lineLimit(1).minimumScaleFactor(0.7).opacity(0.75)
                 inhalt()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: gleichHoch ? .infinity : nil, alignment: .topLeading)
             .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(kastenGrund, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
     private func schulZeile(_ z: (marke: String, text: String)) -> some View {
         HStack(spacing: 6) {
             Text(z.marke).font(.system(size: 11, weight: .bold, design: .rounded)).frame(minWidth: 26, minHeight: 18)
-                .background(.white.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(markeGrund, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(z.text).font(.caption.weight(.semibold)).lineLimit(1)
         }
     }
@@ -286,18 +293,27 @@ struct MorgenWidgetAnsicht: View {
         }
     }
 
-    /// Kinder fehlen · Störungen · Aufgaben – je ein Kasten, antippen öffnet die Liste
+    /// Kinder fehlen · Störungen · Aufgaben – je ein gleich großer Kasten (Zahl + eine Zeile), antippen öffnet die Liste
     private var zahlen: some View {
         HStack(spacing: 6) {
             if let k = e.kinder {
-                kasten("Fehlen", "person.crop.circle.badge.xmark", ziel: "abwesend") {
+                kasten("Fehlen", "person.crop.circle.badge.xmark", ziel: "abwesend", gleichHoch: true) {
                     Text("\(k.count)").font(.headline.monospacedDigit())
-                    if !k.isEmpty { Text(k.prefix(2).joined(separator: ", ")).font(.caption2).lineLimit(1).opacity(0.85) }
+                    Text(k.isEmpty ? "niemand" : k.prefix(2).joined(separator: ", ")).font(.caption2).lineLimit(1).opacity(0.75)
                 }
             }
-            if let s = e.stoerungen { kasten("Störungen", "wrench.and.screwdriver.fill", ziel: "stoerungen") { Text("\(s)").font(.headline.monospacedDigit()) } }
-            if let a = e.aufgaben { kasten("Aufgaben", "checklist", ziel: "aufgaben") { Text("\(a)").font(.headline.monospacedDigit()) } }
+            if let s = e.stoerungen {
+                kasten("Störungen", "wrench.and.screwdriver.fill", ziel: "stoerungen", gleichHoch: true) {
+                    Text("\(s)").font(.headline.monospacedDigit()); Text("offen").font(.caption2).lineLimit(1).opacity(0.75)
+                }
+            }
+            if let a = e.aufgaben {
+                kasten("Aufgaben", "checklist", ziel: "aufgaben", gleichHoch: true) {
+                    Text("\(a)").font(.headline.monospacedDigit()); Text("offen").font(.caption2).lineLimit(1).opacity(0.75)
+                }
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: Größen
@@ -308,7 +324,7 @@ struct MorgenWidgetAnsicht: View {
             Spacer(minLength: 0)
             if let z = e.schulZeilen.first { schulZeile(z) } else { wetterBlock }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(schrift)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -336,7 +352,7 @@ struct MorgenWidgetAnsicht: View {
                 Spacer(minLength: 0)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(schrift)
     }
 
     private var zahlenDa: Bool { e.kinder != nil || e.stoerungen != nil || e.aufgaben != nil }
@@ -374,7 +390,7 @@ struct MorgenWidgetAnsicht: View {
             if e.kontext != .frei, let m = e.essen { kasten("Mensa " + e.schulName, "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(1) } }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(schrift)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -408,7 +424,7 @@ struct MorgenWidgetAnsicht: View {
             if !e.post.isEmpty && !zahlenDa { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(2) } }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(schrift)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

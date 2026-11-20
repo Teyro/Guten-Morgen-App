@@ -169,3 +169,41 @@ final class VertretungsMeldungTests: XCTestCase {
         XCTAssertNil(VertretungsMeldung.pruefen(VertretungsPlan(), altDatum: nil, altSig: nil, planDa: true, betrifft: true))  // ohne Datum
     }
 }
+
+final class VerlaufTests: XCTestCase {
+    func testEdupoolKommentare() {
+        let json: [[String: Any]] = [
+            ["id": 2, "content": "<p>Erledigt, danke!</p>", "user": ["name": "Kim Muster"], "created_at": "2026-11-20T10:00:00Z"],
+            ["id": 1, "content": "Bitte bis Freitag", "author_name": "Alex", "created_at": "2026-11-19T08:00:00Z"],
+            ["id": 3, "content": "  "],
+        ]
+        let k = Aufgaben.kommentareAus(json)
+        XCTAssertEqual(k.map(\.text), ["Bitte bis Freitag", "Erledigt, danke!"])
+        XCTAssertEqual(k.map(\.autor), ["Alex", "Kim Muster"])
+    }
+
+    func testStoerungVerlaufUndFormular() {
+        let html = """
+        <html><body><nav>Menü</nav><main>
+        <div class="comment"><span class="author">Muster, Kim</span><time>19.11.2026 08:15</time><p>Beamer in 2b geht nicht.</p></div>
+        <div class="comment"><span class="author">Admin, IT</span><time>20.11.2026 09:00</time><p>Lampe bestellt.</p></div>
+        <form method="post" action="/iserv/defect/42/comment"><input type="hidden" name="_token" value="abc&amp;1">
+        <textarea name="defect_comment[content]"></textarea><button type="submit" name="defect_comment[submit]">Senden</button></form>
+        </main></body></html>
+        """
+        let v = Stoerungen.verlaufAus(html, von: "https://schule.de/iserv/defect/42")
+        XCTAssertEqual(v.eintraege.map(\.text), ["Beamer in 2b geht nicht.", "Lampe bestellt."])
+        XCTAssertEqual(v.eintraege.first?.zeit, "19.11.2026 08:15")
+        XCTAssertEqual(v.formular?.aktion, "https://schule.de/iserv/defect/42/comment")
+        XCTAssertEqual(v.formular?.textFeld, "defect_comment[content]")
+        XCTAssertEqual(v.formular?.felder.first?.1, "abc&1")
+        XCTAssertTrue(v.formular?.felder.contains { $0.0 == "defect_comment[submit]" } ?? false)
+    }
+
+    func testStoerungOhneKommentarbloecke() {
+        let v = Stoerungen.verlaufAus("<main><h1>Drucker</h1><p>Papierstau</p></main>", von: "https://schule.de/x")
+        XCTAssertEqual(v.eintraege.count, 1)
+        XCTAssertTrue(v.eintraege[0].text.contains("Papierstau"))
+        XCTAssertNil(v.formular)
+    }
+}

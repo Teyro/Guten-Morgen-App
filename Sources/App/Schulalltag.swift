@@ -88,11 +88,16 @@ enum HintergrundLauf {
         }
     }
 
-    /// Nächster Lauf: zum nächsten Wechsel im Schultag, sonst 70 Minuten vor dem Wecker
+    /// Nächster Lauf: zum nächsten Wechsel im Schultag, 70 Minuten vor dem Wecker – und fest morgens (6:45) und nach 13:30,
+    /// damit Störungen, Aufgaben und Kommentare auch ohne Push gemeldet werden (iOS startet den Lauf ungefähr dann, nicht sekundengenau)
     static func planen(wecker: Date?, bloecke: [Block]) {
         let jetzt = Date()
         var ziele = Stundenplan.wechsel(bloecke).filter { $0 > jetzt }
         if let w = wecker?.addingTimeInterval(-70 * 60), w > jetzt { ziele.append(w) }
+        let k = Zeit.kalender
+        for (h, m) in [(6, 45), (13, 35)] {
+            if let heute = k.date(bySettingHour: h, minute: m, second: 0, of: jetzt) { ziele.append(heute > jetzt ? heute : heute.addingTimeInterval(86400)) }
+        }
         guard let ziel = ziele.min() else { return }
         let r = BGAppRefreshTaskRequest(identifier: kennung)
         r.earliestBeginDate = ziel

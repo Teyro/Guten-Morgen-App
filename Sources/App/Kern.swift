@@ -44,6 +44,8 @@ final class Kern {
     var hostFrage: String?
     /// Edupool verbinden: angezeigter Code, solange gewartet wird
     var edupoolCode: String?
+    /// … und die Freigabeseite dazu (zum erneuten Öffnen)
+    var edupoolSeite: URL?
 
     private func merke<T: Encodable>(_ w: T?, _ k: String) {
         guard !vorschau else { return }
@@ -390,6 +392,13 @@ final class Kern {
         }
     }
 
+    /// Gesprächsverlauf einer Störung (Detailseite in IServ) und Antworten darauf
+    func stoerungVerlauf(_ url: String) async throws -> StoerungVerlauf { try await Stoerungen.verlauf(iservSitzung(), url: url) }
+    func stoerungAntworten(_ f: StoerungVerlauf.Formular, text: String) async throws { try await Stoerungen.antworten(iservSitzung(), formular: f, text: text) }
+    /// Kommentare einer Edupool-Karte und Antworten darauf
+    func aufgabeKommentare(_ karte: String) async throws -> [Aufgaben.Kommentar] { try await Aufgaben.kommentare(token: edupoolToken, karte: karte) }
+    func aufgabeAntworten(_ karte: String, text: String) async throws { try await Aufgaben.antworten(token: edupoolToken, karte: karte, text: text) }
+
     /// Antwort aus dem Code-Fenster (nil = abgebrochen)
     func codeEingegeben(_ code: String?) {
         codeHinweis = nil
@@ -464,10 +473,14 @@ final class Kern {
         do {
             let f = try await Aufgaben.freigabeStarten()
             edupoolCode = f.userCode
+            edupoolSeite = f.seite
             oeffne(f.seite)
             while Date() < f.ablauf, edupoolCode != nil {
                 try? await Task.sleep(nanoseconds: UInt64(f.intervall * 1_000_000_000))
-                if let t = try await Aufgaben.freigabeAbholen(f) {
+                // Netzfehler (App kurz im Hintergrund, Funkloch) brechen nicht ab – nur echte Antworten (abgelaufen, abgelehnt)
+                let token: String?
+                do { token = try await Aufgaben.freigabeAbholen(f) } catch let e as Aufgaben.Fehler { throw e } catch { continue }
+                if let t = token {
                     edupoolToken = t; einstellungen.aufgaben = true; edupoolCode = nil
                     meldung = "Mit Edupool verbunden"
                     await moduleLaden(erzwingen: true)

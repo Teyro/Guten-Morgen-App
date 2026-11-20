@@ -45,6 +45,15 @@ enum Melder {
                 let kat = Aufgaben.kategorien[x.kategorie].name
                 melde(id: "aufgabe-\(x.id)", titel: kat == "Erledigt" ? "Aufgabe erledigt" : "Aufgabe · \(kat)", text: x.titel, link: "gutenmorgen://aufgaben")
             }
+            // Neue Kommentare an deinen Karten (Anzahl gestiegen)
+            let zahlen = Dictionary(a.aufgaben.compactMap { x in x.kommentarAnzahl.map { (x.id, $0) } }, uniquingKeysWith: { a, _ in a })
+            if let alt = d.dictionary(forKey: "kommentareAufgaben") as? [String: Int] {
+                for x in a.aufgaben {
+                    guard let n = zahlen[x.id], let vorher = alt[x.id], n > vorher else { continue }
+                    melde(id: "kommentar-\(x.id)-\(n)", titel: n - vorher == 1 ? "Neuer Kommentar" : "\(n - vorher) neue Kommentare", text: x.titel, link: "gutenmorgen://aufgaben")
+                }
+            }
+            d.set(zahlen, forKey: "kommentareAufgaben")
         }
     }
 

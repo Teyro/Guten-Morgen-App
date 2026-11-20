@@ -88,7 +88,7 @@ struct StoerungenAnsicht: View {
         .refreshable { await kern.moduleLaden(erzwingen: true) }
         .sheet(item: Binding(get: { offen.map { Kasten(m: $0) } }, set: { offen = $0?.m })) { k in
             NavigationStack {
-                StoerungDetail(m: k.m)
+                StoerungDetail(kern: kern, m: k.m)
                     .background(Hintergrund(farbton: kern.farbton))
                     .navigationTitle("Störung").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { offen = nil } } }
@@ -101,7 +101,12 @@ struct StoerungenAnsicht: View {
 
 /// Eine Störungsmeldung ausführlich: Zustand groß, alle Angaben, ganzer Text, Link zu IServ
 struct StoerungDetail: View {
+    let kern: Kern
     let m: Stoerung
+    @State private var verlauf: StoerungVerlauf?
+    @State private var fehler = ""
+    @State private var antwort = ""
+    @State private var sendet = false
     private var farbe: Color { m.erledigt ? .green : m.uebernommen ? .blue : .orange }
 
     var body: some View {
@@ -132,6 +137,8 @@ struct StoerungDetail: View {
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
 
+                if !m.url.isEmpty { verlaufKasten }
+
                 if let u = URL(string: m.url), !m.url.isEmpty {
                     Link(destination: u) { Label("In IServ öffnen", systemImage: "safari").frame(maxWidth: .infinity).padding(12) }
                         .glas(18, farbe: .blue)
@@ -139,6 +146,45 @@ struct StoerungDetail: View {
             }
             .padding()
         }
+        .task { await laden() }
+    }
+
+    /// Ganzer Verlauf aus IServ, darunter Antworten (wenn IServ ein Antwortfeld anbietet)
+    private var verlaufKasten: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Verlauf").font(.headline)
+            if let v = verlauf {
+                ForEach(Array(v.eintraege.enumerated()), id: \.offset) { _, e in
+                    VStack(alignment: .leading, spacing: 3) {
+                        if !e.autor.isEmpty || !e.zeit.isEmpty {
+                            Text([e.autor, e.zeit].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        }
+                        Text(e.text).font(.callout).textSelection(.enabled)
+                    }
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                if let f = v.formular {
+                    AntwortFeld(text: $antwort, sendet: sendet) { Task { await senden(f) } }
+                } else {
+                    Text("Antworten geht für diese Meldung nur in IServ.").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if fehler.isEmpty {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+            if !fehler.isEmpty { Label(fehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
+    }
+
+    private func laden() async {
+        guard !m.url.isEmpty else { return }
+        do { verlauf = try await kern.stoerungVerlauf(m.url); fehler = "" } catch { fehler = error.localizedDescription }
+    }
+
+    private func senden(_ f: StoerungVerlauf.Formular) async {
+        sendet = true; defer { sendet = false }
+        do { try await kern.stoerungAntworten(f, text: antwort); antwort = ""; await laden() } catch { fehler = error.localizedDescription }
     }
 
     @ViewBuilder private func angabe(_ s: String, _ t: String, _ w: String) -> some View {
@@ -158,8 +204,8 @@ struct AufgabenAnsicht: View {
     @Bindable var kern: Kern
     @State private var suche = ""
     @State private var erledigte = false
-    static let farben: [Color] = [Color(red: 0.42, green: 0.31, blue: 0.77), Color(red: 0.6, green: 0.38, blue: 0), Color(red: 0.11, green: 0.44, blue: 0.65),
-                                  Color(red: 0.71, green: 0.27, blue: 0.12), Color(red: 0.17, green: 0.48, blue: 0.26)]
+    /// Systemfarben je Kategorie (Ideen, Zu erledigen, In Bearbeitung, Wartet, Erledigt)
+    static let farben: [Color] = [.purple, .blue, .orange, .pink, .green]
 
     var body: some View {
         let st = kern.aufgaben
@@ -183,7 +229,7 @@ struct AufgabenAnsicht: View {
                 if (!k.erledigt || erledigte) && !a.isEmpty {
                     Section {
                         ForEach(a) { x in
-                            NavigationLink { AufgabeAnsicht(a: x, farbe: Self.farben[g.kategorie]) } label: {
+                            NavigationLink { AufgabeAnsicht(kern: kern, a: x, farbe: Self.farben[g.kategorie]) } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(x.titel).font(.body.weight(.semibold))
                                     if !x.beschreibung.isEmpty { Text(x.beschreibung).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -206,8 +252,13 @@ struct AufgabenAnsicht: View {
 
 /// Eine Aufgabe mit allem Inhalt (Text, Links, Dateien) – aus dem Speicher, ohne Netz
 struct AufgabeAnsicht: View {
+    let kern: Kern
     let a: Aufgabe
     let farbe: Color
+    @State private var kommentare: [Aufgaben.Kommentar]?
+    @State private var fehler = ""
+    @State private var antwort = ""
+    @State private var sendet = false
     var body: some View {
         List {
             Section {
@@ -228,9 +279,34 @@ struct AufgabeAnsicht: View {
                     }
                 }
             }
+            Section {
+                if let k = kommentare {
+                    if k.isEmpty { Text("Noch keine Kommentare.").foregroundStyle(.secondary) }
+                    ForEach(k) { c in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text([c.autor, c.zeit.map { $0.formatted(.dateTime.locale(Locale(identifier: "de_DE")).day().month(.twoDigits).hour().minute()) } ?? ""]
+                                .filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(c.text).textSelection(.enabled)
+                        }
+                    }
+                } else if fehler.isEmpty { ProgressView() }
+                if !fehler.isEmpty { Label(fehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }
+                AntwortFeld(text: $antwort, sendet: sendet) { Task { await senden() } }
+            } header: { Text("Kommentare") }
         }
         .navigationTitle(a.titel)
         .navigationBarTitleDisplayMode(.inline)
+        .task { await laden() }
+        .refreshable { await laden() }
+    }
+
+    private func laden() async {
+        do { kommentare = try await kern.aufgabeKommentare(a.id); fehler = "" } catch { fehler = error.localizedDescription }
+    }
+
+    private func senden() async {
+        sendet = true; defer { sendet = false }
+        do { try await kern.aufgabeAntworten(a.id, text: antwort); antwort = ""; await laden() } catch { fehler = error.localizedDescription }
     }
 
     /// HTML → Markdown-ähnlich, dann als formatierter Text (fett, kursiv, Links, Listen)
@@ -244,5 +320,23 @@ struct AufgabeAnsicht: View {
         for (x, y) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] { t = t.replacingOccurrences(of: x, with: y) }
         t = t.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
         return (try? AttributedString(markdown: t, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(t)
+    }
+}
+
+
+/// Eingabe für eine Antwort mit Senden-Knopf (wie in Nachrichten)
+struct AntwortFeld: View {
+    @Binding var text: String
+    let sendet: Bool
+    let senden: () -> Void
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Antworten …", text: $text, axis: .vertical).lineLimit(1...5).textFieldStyle(.roundedBorder)
+            Button(action: senden) {
+                if sendet { ProgressView() } else { Image(systemName: "arrow.up.circle.fill").font(.title2) }
+            }
+            .disabled(sendet || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityLabel("Senden")
+        }
     }
 }
