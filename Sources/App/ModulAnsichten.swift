@@ -46,39 +46,35 @@ struct AbwesendAnsicht: View {
     }
 }
 
-/// Störungsmeldungen: offene zuerst (neueste oben), wer sie übernommen hat; antippen zeigt den Text
+/// Störungsmeldungen: oben die Zahlen, darunter getrennt nach „Noch niemand“, „In Arbeit“ und „Erledigt“
 struct StoerungenAnsicht: View {
     @Bindable var kern: Kern
     @State private var offen: Stoerung?
 
     var body: some View {
         let st = kern.stoerungen
-        let liste = kern.einstellungen.erledigteZeigen ? (st?.alle ?? []) : (st?.offen ?? [])
+        let neu = st?.offen.filter { !$0.uebernommen } ?? []
+        let arbeit = st?.offen.filter(\.uebernommen) ?? []
+        let erledigt = (st?.alle ?? []).filter(\.erledigt)
         List {
             Section {
-                HStack(spacing: 14) {
-                    Text("\(st?.offen.count ?? 0)").font(.system(size: 44, weight: .bold, design: .rounded))
-                    VStack(alignment: .leading) {
-                        Text("offene Störungen").font(.headline)
-                        Text("\(st?.offen.filter { !$0.uebernommen }.count ?? 0) noch ohne Bearbeiter").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer()
+                HStack(spacing: 10) {
+                    StatusZahl(zahl: neu.count, text: "Noch niemand", symbol: "exclamationmark.circle.fill", farbe: .orange)
+                    StatusZahl(zahl: arbeit.count, text: "In Arbeit", symbol: "wrench.adjustable.fill", farbe: .blue)
+                    StatusZahl(zahl: erledigt.count, text: "Erledigt", symbol: "checkmark.circle.fill", farbe: .green)
                 }
-                .padding(14).glas(20).listRowBackground(Color.clear).listRowSeparator(.hidden)
-                Toggle("Erledigte zeigen", isOn: $kern.einstellungen.erledigteZeigen).listRowBackground(Color.clear)
-                if !kern.stoerungenFehler.isEmpty { Label(kern.stoerungenFehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).listRowBackground(Color.clear) }
+                .listRowBackground(Color.clear).listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+                if !kern.stoerungenFehler.isEmpty {
+                    Label(kern.stoerungenFehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+                }
             }
+            gruppe("Noch niemand zuständig", neu, farbe: .orange)
+            gruppe("In Arbeit", arbeit, farbe: .blue)
+            if kern.einstellungen.erledigteZeigen { gruppe("Erledigt", erledigt, farbe: .green) }
             Section {
-                ForEach(liste, id: \.self) { m in
-                    Button { offen = m } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(m.titel).font(.body.weight(.semibold)).foregroundStyle(m.erledigt ? .secondary : .primary)
-                            Text([m.ort, m.datum.map { $0.formatted(.dateTime.locale(Locale(identifier: "de_DE")).day().month(.twoDigits).hour().minute()) } ?? "", m.autor.isEmpty ? "" : "von \(m.autor)"]
-                                .filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                            Text(m.zustand).font(.caption.weight(.semibold)).foregroundStyle(m.erledigt ? .green : m.uebernommen ? .blue : .orange)
-                        }
-                    }.buttonStyle(.plain)
-                }
+                Toggle("Erledigte zeigen", isOn: $kern.einstellungen.erledigteZeigen)
+            } footer: {
+                if let s = st?.stand { Text("Stand " + s.uhrzeit) }
             }
         }
         .listStyle(.insetGrouped)
@@ -93,13 +89,74 @@ struct StoerungenAnsicht: View {
                     .navigationTitle("Störung").navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { offen = nil } } }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
+        }
+    }
+
+    @ViewBuilder private func gruppe(_ titel: String, _ liste: [Stoerung], farbe: Color) -> some View {
+        if !liste.isEmpty {
+            Section {
+                ForEach(liste, id: \.self) { m in
+                    Button { offen = m } label: { StoerungZeile(m: m) }.buttonStyle(.plain)
+                }
+            } header: {
+                Text("\(titel) (\(liste.count))").foregroundStyle(farbe)
+            }
         }
     }
     struct Kasten: Identifiable { let m: Stoerung; var id: String { m.titel + m.url + (m.datum?.description ?? "") } }
 }
 
-/// Eine Störungsmeldung ausführlich: Zustand groß, alle Angaben, ganzer Text, Link zu IServ
+/// Farbe und Symbol je Zustand – überall gleich
+extension Stoerung {
+    var farbe: Color { erledigt ? .green : uebernommen ? .blue : .orange }
+    var symbol: String { erledigt ? "checkmark.circle.fill" : uebernommen ? "wrench.adjustable.fill" : "exclamationmark.circle.fill" }
+    var zustandKurz: String { erledigt ? "Erledigt" : !bearbeiter.isEmpty ? bearbeiter : uebernommen ? (status.isEmpty ? "In Arbeit" : status) : "Noch niemand" }
+}
+
+/// Eine Zahl mit Symbol als kleine Glaskachel
+struct StatusZahl: View {
+    let zahl: Int, text: String, symbol: String, farbe: Color
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: symbol).font(.title3).foregroundStyle(farbe)
+            Text("\(zahl)").font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit()
+            Text(text).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(12).glas(18)
+    }
+}
+
+/// Zeile: Zustand als farbiges Symbol links, Titel, darunter Ort · Zeit · Melder
+struct StoerungZeile: View {
+    let m: Stoerung
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: m.symbol).font(.title2).foregroundStyle(m.farbe).frame(width: 30)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(m.titel).font(.body.weight(.semibold)).foregroundStyle(m.erledigt ? .secondary : .primary).lineLimit(2)
+                HStack(spacing: 10) {
+                    if !m.ort.isEmpty { Label(m.ort, systemImage: "mappin.and.ellipse").lineLimit(1) }
+                    if let d = m.datum { Label(d.formatted(.relative(presentation: .named)), systemImage: "clock").lineLimit(1) }
+                }
+                .font(.caption).foregroundStyle(.secondary).labelStyle(KleinesSymbol())
+                Text(m.zustandKurz).font(.caption.weight(.semibold)).foregroundStyle(m.farbe)
+                    .padding(.horizontal, 8).padding(.vertical, 2).background(m.farbe.opacity(0.14), in: Capsule())
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).padding(.top, 4)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Label mit kleinem Abstand zwischen Symbol und Text
+struct KleinesSymbol: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View { HStack(spacing: 3) { configuration.icon; configuration.title } }
+}
+
+/// Eine Störungsmeldung: farbiger Kopf mit Zustand, Angaben, Beschreibung, Verlauf als Gespräch, unten Antworten
 struct StoerungDetail: View {
     let kern: Kern
     let m: Stoerung
@@ -107,74 +164,100 @@ struct StoerungDetail: View {
     @State private var fehler = ""
     @State private var antwort = ""
     @State private var sendet = false
-    private var farbe: Color { m.erledigt ? .green : m.uebernommen ? .blue : .orange }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(m.zustand).font(.subheadline.weight(.bold)).padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(farbe.opacity(0.2), in: Capsule()).foregroundStyle(farbe)
-                    Text(m.titel).font(.title2.weight(.bold))
+            VStack(alignment: .leading, spacing: 16) {
+                // Kopf
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(m.zustandKurz, systemImage: m.symbol).font(.subheadline.weight(.bold)).foregroundStyle(m.farbe)
+                        .padding(.horizontal, 12).padding(.vertical, 6).background(m.farbe.opacity(0.16), in: Capsule())
+                    Text(m.titel).font(.title2.weight(.bold)).fixedSize(horizontal: false, vertical: true)
                     if let d = m.datum {
                         Text(d.formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.wide).day().month().hour().minute()) + " · " + d.formatted(.relative(presentation: .named)))
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22, farbe: farbe)
+                .padding(18).frame(maxWidth: .infinity, alignment: .leading).glas(24, farbe: m.farbe)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    angabe("mappin.and.ellipse", "Ort", m.ort)
-                    angabe("person.fill", "Gemeldet von", m.autor)
-                    angabe("wrench.adjustable.fill", "Bearbeitet von", m.bearbeiter.isEmpty ? (m.unbesetzt ? "noch niemand" : "") : m.bearbeiter)
-                    angabe("flag.fill", "Status", m.status)
+                // Angaben
+                VStack(spacing: 0) {
+                    angabe("mappin.and.ellipse", .red, "Ort", m.ort)
+                    angabe("person.fill", .gray, "Gemeldet von", m.autor)
+                    angabe("wrench.adjustable.fill", .blue, "Bearbeitet von", m.bearbeiter.isEmpty ? (m.unbesetzt ? "noch niemand" : "") : m.bearbeiter)
+                    angabe("flag.fill", m.farbe, "Status", m.status)
                 }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
+                .padding(.vertical, 4).glas(22)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Beschreibung").font(.headline)
-                    Text(m.inhalt.isEmpty ? "Kein weiterer Text." : m.inhalt).font(.body).textSelection(.enabled)
+                abschnitt("Beschreibung", "text.alignleft") {
+                    Text(m.inhalt.isEmpty ? "Kein weiterer Text." : m.inhalt).font(.body).foregroundStyle(m.inhalt.isEmpty ? .secondary : .primary).textSelection(.enabled)
                 }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
 
-                if !m.url.isEmpty { verlaufKasten }
+                if !m.url.isEmpty {
+                    abschnitt("Verlauf", "bubble.left.and.bubble.right.fill") {
+                        if let v = verlauf {
+                            if v.eintraege.isEmpty { Text("Noch keine Antworten.").foregroundStyle(.secondary) }
+                            ForEach(Array(v.eintraege.enumerated()), id: \.offset) { _, e in blase(e) }
+                            if v.formular == nil { Label("Antworten geht für diese Meldung nur in IServ.", systemImage: "info.circle").font(.caption).foregroundStyle(.secondary) }
+                        } else if fehler.isEmpty {
+                            HStack { ProgressView(); Text("Lade Verlauf …").foregroundStyle(.secondary) }
+                        }
+                        if !fehler.isEmpty { Label(fehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }
+                    }
+                }
 
                 if let u = URL(string: m.url), !m.url.isEmpty {
-                    Link(destination: u) { Label("In IServ öffnen", systemImage: "safari").frame(maxWidth: .infinity).padding(12) }
+                    Link(destination: u) { Label("In IServ öffnen", systemImage: "safari").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(14) }
                         .glas(18, farbe: .blue)
                 }
             }
             .padding()
         }
+        .safeAreaInset(edge: .bottom) {
+            if let f = verlauf?.formular {
+                AntwortFeld(text: $antwort, sendet: sendet) { Task { await senden(f) } }
+                    .padding(.horizontal).padding(.vertical, 10).background(.bar)
+            }
+        }
         .task { await laden() }
     }
 
-    /// Ganzer Verlauf aus IServ, darunter Antworten (wenn IServ ein Antwortfeld anbietet)
-    private var verlaufKasten: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Verlauf").font(.headline)
-            if let v = verlauf {
-                ForEach(Array(v.eintraege.enumerated()), id: \.offset) { _, e in
-                    VStack(alignment: .leading, spacing: 3) {
-                        if !e.autor.isEmpty || !e.zeit.isEmpty {
-                            Text([e.autor, e.zeit].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        }
-                        Text(e.text).font(.callout).textSelection(.enabled)
-                    }
-                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    /// Bearbeiter (Technik) rechts und blau, alle anderen links und grau – wie in Nachrichten
+    private func blase(_ e: StoerungVerlauf.Eintrag) -> some View {
+        let technik = !m.bearbeiter.isEmpty && !e.autor.isEmpty && (e.autor.localizedCaseInsensitiveContains(m.bearbeiter) || m.bearbeiter.localizedCaseInsensitiveContains(e.autor))
+        return HStack {
+            if technik { Spacer(minLength: 40) }
+            VStack(alignment: .leading, spacing: 4) {
+                if !e.autor.isEmpty || !e.zeit.isEmpty {
+                    Text([e.autor, e.zeit].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(technik ? Color.blue : Color.secondary)
                 }
-                if let f = v.formular {
-                    AntwortFeld(text: $antwort, sendet: sendet) { Task { await senden(f) } }
-                } else {
-                    Text("Antworten geht für diese Meldung nur in IServ.").font(.caption).foregroundStyle(.secondary)
-                }
-            } else if fehler.isEmpty {
-                ProgressView().frame(maxWidth: .infinity)
+                Text(e.text).font(.callout).textSelection(.enabled)
             }
-            if !fehler.isEmpty { Label(fehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }
+            .padding(12)
+            .background(technik ? Color.blue.opacity(0.14) : Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            if !technik { Spacer(minLength: 40) }
+        }
+    }
+
+    private func abschnitt<I: View>(_ titel: String, _ symbol: String, @ViewBuilder inhalt: () -> I) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(titel, systemImage: symbol).font(.headline)
+            inhalt()
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading).glas(22)
+    }
+
+    @ViewBuilder private func angabe(_ s: String, _ farbe: Color, _ t: String, _ w: String) -> some View {
+        if !w.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Image(systemName: s).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 26, height: 26).background(farbe.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text(t).foregroundStyle(.secondary)
+                Spacer()
+                Text(w).multilineTextAlignment(.trailing).font(.body.weight(.medium))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 9)
+        }
     }
 
     private func laden() async {
@@ -185,17 +268,6 @@ struct StoerungDetail: View {
     private func senden(_ f: StoerungVerlauf.Formular) async {
         sendet = true; defer { sendet = false }
         do { try await kern.stoerungAntworten(f, text: antwort); antwort = ""; await laden() } catch { fehler = error.localizedDescription }
-    }
-
-    @ViewBuilder private func angabe(_ s: String, _ t: String, _ w: String) -> some View {
-        if !w.isEmpty {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: s).foregroundStyle(.secondary).frame(width: 22)
-                Text(t).foregroundStyle(.secondary)
-                Spacer()
-                Text(w).multilineTextAlignment(.trailing).font(.body.weight(.medium))
-            }
-        }
     }
 }
 

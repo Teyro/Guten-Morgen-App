@@ -480,8 +480,6 @@ struct EinstellungenAnsicht: View {
     @State private var haeuserText = ""
     @State private var scannen = false
     @Environment(\.openURL) private var oeffneURL
-    /// Edupool-Freigabeseite in der App (Safari-Ansicht) – die App bleibt dabei aktiv und holt die Freigabe sicher ab
-    @State private var freigabeSeite: WebSeite?
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
     /// Alle Kacheln in aktueller Reihenfolge (auch ausgeschaltete) zum Verschieben und Abschalten
@@ -502,6 +500,48 @@ struct EinstellungenAnsicht: View {
         @Bindable var k = kern
         Form {
             Section {
+                seite("Aussehen und Startseite", "paintbrush.fill", .pink) { aussehen }
+                seite("Wecker und Nacht", "alarm.fill", .orange) { wecker }
+                seite("Schule", "graduationcap.fill", .blue) { schule }
+                seite("IServ und Edupool", "person.2.fill", .teal) { iserv }
+                seite("Mitteilungen", "bell.badge.fill", .red) { mitteilungen }
+                seite("Zuhause und Unterwegs", "house.fill", .green) { zuhause }
+                seite("Kalender, Watch, Personaldaten", "ellipsis.circle.fill", .gray) { weiteres }
+            }
+            Section("Über") {
+                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
+                Link("Guten Morgen auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Hintergrund(farbton: kern.farbton))
+        .onAppear { haeuserText = Vertretung.text(haeuser: kern.einstellungen.haeuser) }
+        .navigationTitle("Einstellungen")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { schliessen(); Task { await kern.aktualisieren() } } } }
+    }
+
+    /// Eine Unterseite wie in den iOS-Einstellungen: farbiges Symbol, Titel, eigene Liste
+    private func seite<V: View>(_ titel: String, _ symbol: String, _ farbe: Color, @ViewBuilder inhalt: () -> V) -> some View {
+        NavigationLink {
+            Form { inhalt() }
+                .scrollContentBackground(.hidden)
+                .background(Hintergrund(farbton: kern.farbton))
+                .navigationTitle(titel)
+                .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            Label {
+                Text(titel)
+            } icon: {
+                Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 29, height: 29).background(farbe.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+    }
+
+    @ViewBuilder private var aussehen: some View {
+        @Bindable var k = kern
+            Section {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
                         ForEach(Farbton.alle) { f in
@@ -519,6 +559,27 @@ struct EinstellungenAnsicht: View {
                 }
             } header: { Text("Farbe des Widgets") } footer: { Text("Die App selbst hat immer die Standardfarben von iOS. Der Farbton hier gilt für das Widget, die Uhr und die Live-Aktivität.") }
 
+            Section {
+                ForEach(kachelOrdnungEinstellung) { kc in
+                    Toggle(isOn: kachelAn(kc)) { Label(kc.name, systemImage: kc.symbol) }
+                }
+                    .onMove { from, to in
+                        var arr = kachelOrdnungEinstellung.map(\.rawValue)
+                        arr.move(fromOffsets: from, toOffset: to)
+                        k.einstellungen.kachelReihenfolge = arr
+                    }
+                if !kern.einstellungen.kachelReihenfolge.isEmpty {
+                    Button("Automatische Reihenfolge") { k.einstellungen.kachelReihenfolge = [] }
+                }
+            } header: { HStack { Text("Startseite"); Spacer(); EditButton() } } footer: { Text("Schalter: Kachel zeigen oder ausblenden. „Bearbeiten“, dann ziehen zum Verschieben. „Automatisch“: in der Schule steht die Schule oben, zu Hause und am Wochenende Termine und Post. Kacheln ohne Inhalt (z. B. keine Schultermine) erscheinen von selbst nicht.") }
+
+            Section {
+                Button("Widget verbinden") { Task { await kern.widgetUebergeben(erzwingen: true) } }
+            } header: { Text("Widget") } footer: { Text("Gibt dem Widget Einstellungen und Zugang (kurz erscheint eine Live-Aktivität). Passiert beim Öffnen der App auch von selbst.") }
+    }
+
+    @ViewBuilder private var wecker: some View {
+        @Bindable var k = kern
             Section {
                 ForEach(tage, id: \.0) { t in
                     HStack {
@@ -540,6 +601,8 @@ struct EinstellungenAnsicht: View {
                 }
             } header: { Text("Wecker") } footer: { Text("Uhrzeit je Tag (z. B. 06:15), leer = kein Wecker. Steht früh ein Termin im Kalender, weckt die App rechtzeitig vorher.") }
 
+            WeckmusikAbschnitt(musik: kern.musik)
+
             Section("Wetter") {
                 TextField("Ort", text: $k.einstellungen.ortName)
                 HStack {
@@ -547,20 +610,6 @@ struct EinstellungenAnsicht: View {
                     TextField("Länge", value: $k.einstellungen.lon, format: .number.precision(.fractionLength(4))).keyboardType(.decimalPad)
                 }
             }
-
-            Section {
-                TextField("https://homeassistant.local:8123", text: $k.einstellungen.haAdresse).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                SecureField("Langlebiges Zugriffstoken", text: $k.token)
-                Toggle("Post und Pakete vorlesen", isOn: $k.einstellungen.post)
-                ForEach($k.einstellungen.nacht) { $a in
-                    VStack(alignment: .leading) {
-                        TextField("Name", text: $a.name)
-                        HStack { TextField("light.turn_off", text: $a.dienst); TextField("all", text: $a.ziel) }.font(.caption).textInputAutocapitalization(.never)
-                    }
-                }
-                .onDelete { k.einstellungen.nacht.remove(atOffsets: $0) }
-                Button("Aktion für „Gute Nacht“ hinzufügen") { k.einstellungen.nacht.append(HAAktion(name: "Neue Aktion", dienst: "light.turn_off", ziel: "all")) }
-            } header: { Text("Home Assistant") } footer: { Text("Token: in Home Assistant unten links auf deinen Namen → Sicherheit → Langlebige Zugriffstoken. Post kommt aus der Integration „Briefankündigung“.") }
 
             Section {
                 TextField("Nachtlampe, z. B. light.kinderzimmer", text: $k.einstellungen.nachtlampe).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -571,6 +620,14 @@ struct EinstellungenAnsicht: View {
                 Toggle("Geschichte über einen Kurzbefehl starten", isOn: $k.einstellungen.nachtGeschichteKurzbefehl)
             } header: { Text("Gute Nacht") } footer: { Text("„Gute Nacht“ schaltet zuerst deine Aktionen oben (z. B. alle Lichter aus), lässt dann die Nachtlampe gedimmt an und spielt die Geschichte. Ein Spotify-Link öffnet die Playlist in Spotify (Zufallswiedergabe dort einschalten, dann kommt jedes Mal eine andere Folge). Für „30 Minuten, dann aus“ einen Kurzbefehl anlegen, der die Folge startet und einen 30-Minuten-Timer stellt, und hier dessen Namen eintragen.") }
 
+            Section {
+                Toggle("Schlaf aus Apple Health", isOn: $k.einstellungen.gesundheit)
+                    .onChange(of: kern.einstellungen.gesundheit) { _, an in if an { Task { _ = await Gesundheit.erlauben(); await kern.aktualisieren() } } }
+            } header: { Text("Apple Health") } footer: { Text("Zeigt morgens, wie lange du geschlafen hast, und trägt den Nachtmodus als Schlaf („im Bett“) in Health ein.") }
+    }
+
+    @ViewBuilder private var schule: some View {
+        @Bindable var k = kern
             Section {
                 Toggle("Vertretungsplan", isOn: $k.einstellungen.vertretung)
                 TextField("Freigabe-Link (https://…/s/…)", text: $k.einstellungen.vertretungLink).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -631,6 +688,113 @@ struct EinstellungenAnsicht: View {
             }
 
             Section {
+                TextField("Schulkalender (ICS- oder webcal-Link)", text: $k.einstellungen.schulKalender).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+            } header: { Text("Schultermine") } footer: { Text("Öffentlicher Kalender der Schule (z. B. aus IServ „Abonnieren“). Die kommenden Termine stehen dann in der Schul-Übersicht.") }
+
+            Section {
+                Toggle("Speiseplan zeigen", isOn: $k.einstellungen.mensa)
+                if kern.einstellungen.mensa {
+                    TextField("Adresse des Kantinen-Portals (https://…)", text: $k.einstellungen.mensaAdresse).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    TextField("Benutzername", text: $k.einstellungen.mensaBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("Passwort", text: $k.mensaPasswort)
+                }
+            } header: { Text("Mensa") } footer: { Text("Das Essen des Tages aus dem Kantinen-Portal (PCA) – dieselben Zugangsdaten wie im Browser. Bestellte Gerichte stehen vorne.") }
+
+            Section {
+                Toggle("Schulobst-Tage zeigen", isOn: $k.einstellungen.obst)
+                if kern.einstellungen.obst {
+                    TextField("Kalender-Link (…/calendar.ics)", text: $k.einstellungen.obstKalender).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                }
+            } header: { Text("Schulobst") } footer: { Text("Öffentlicher IServ-Kalender mit den Liefertagen (Kalender → Teilen → öffentlicher Link).") }
+
+            Section {
+                Text("1. iPhone-Einstellungen → Fokus → „+“ → Eigener Fokus „Schule“.\n2. Dort „Zeitplan hinzufügen“ → Ort → Schule: dann schaltet iOS den Fokus an, sobald du dort bist.\n3. Unten bei „Fokus-Filter“ → Guten Morgen → „Schul-Infos zuerst“ einschalten.").font(.footnote)
+                Button("iPhone-Einstellungen öffnen") { if let u = URL(string: UIApplication.openSettingsURLString) { oeffneURL(u) } }
+            } header: { Text("Fokus „Schule“") } footer: { Text("Den Fokus selbst darf eine App nicht einschalten – iOS macht das aber zuverlässig nach Ort. Guten Morgen zeigt im Fokus die Schul-Infos zuerst.") }
+    }
+
+    @ViewBuilder private var iserv: some View {
+        @Bindable var k = kern
+            Section {
+                Toggle("Abwesenheiten (Kinder)", isOn: $k.einstellungen.abwesenheiten)
+                Toggle("Störungsmeldungen", isOn: $k.einstellungen.stoerungen)
+                if kern.einstellungen.abwesenheiten || kern.einstellungen.stoerungen {
+                    TextField("IServ-Adresse, z. B. schule.de", text: $k.einstellungen.iservServer).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    TextField("Benutzername", text: $k.einstellungen.iservBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("Passwort", text: $k.iservPasswort)
+                    SecureField("2FA-Schlüssel (optional)", text: $k.totpGeheim)
+                    if kern.einstellungen.abwesenheiten {
+                        TextField("Nur Klassen, z. B. 2a, 2b (leer = alle)", text: $k.einstellungen.abwesendKlassen).textInputAutocapitalization(.never)
+                        Toggle("Sichtschutz im Widget (nur Vorname + Initiale)", isOn: $k.einstellungen.sichtschutz)
+                    }
+                    if !kern.einstellungen.iservHosts.isEmpty { LabeledContent("Bestätigte Anmeldeseiten", value: kern.einstellungen.iservHosts.joined(separator: ", ")) }
+                    Button("Neu suchen (Module erkunden)") { k.einstellungen.abwesendQuelle = nil; k.einstellungen.stoerungQuelle = nil; Task { await kern.moduleLaden(erzwingen: true) } }
+                }
+            } header: { Text("IServ") } footer: { Text("Wie in den Skripten Abwesenheiten und Störungen. Mit 2FA-Schlüssel (Text unter dem QR-Code beim Einrichten der Zwei-Faktor-Anmeldung) erzeugt die App die Codes selbst – sonst fragt sie danach, und das Widget zeigt nur den letzten Stand. Achtung: Passwort und zweiter Faktor liegen dann auf demselben Gerät. Abwesenheiten werden nur angezeigt, nicht ausgewertet.") }
+
+            Section {
+                if kern.edupoolCode != nil {
+                    Button("Freigabeseite wieder öffnen (Code \(kern.edupoolCode!))") { if let u = kern.edupoolSeite { SafariSeite.zeigen(u) } }
+                    Button("Abbrechen", role: .cancel) { kern.edupoolCode = nil }
+                } else if kern.edupoolToken.isEmpty {
+                    Button("Mit Edupool Boards verbinden") { Task { await kern.edupoolVerbinden { u in Task { @MainActor in SafariSeite.zeigen(u) } } } }
+                } else {
+                    Toggle("Aufgaben zeigen", isOn: $k.einstellungen.aufgaben)
+                    TextField("Kartenfarbe deiner Aufgaben", text: $k.einstellungen.aufgabenFarbe).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("Neu verbinden") { Task { await kern.edupoolVerbinden { u in Task { @MainActor in SafariSeite.zeigen(u) } } } }
+                    Button("Verbindung trennen", role: .destructive) { k.edupoolToken = ""; k.aufgaben = nil; k.einstellungen.aufgaben = false }
+                }
+            } header: { Text("Edupool-Aufgaben") } footer: { Text("Verbinden öffnet die Freigabeseite von Edupool Boards in der App, der Code ist schon eingetragen: anmelden, „Lesen“ anhaken – zum Antworten auf Karten auch „erstellen, ändern“ –, Laufzeit wählen (bis 90 Tage), bestätigen und die Seite schließen. Dein Passwort sieht die App nie.") }
+
+            Section {
+                TextField("Name des Skripts", text: $k.einstellungen.meinTagSkript).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if !kern.einstellungen.kollegium.isEmpty { LabeledContent("Kollegium", value: "\(kern.einstellungen.kollegium.count) Namen") }
+            } header: { Text("Mein Tag (Scriptable)") } footer: { Text("Abwesenheiten, Störungen und Aufgaben öffnen sich in Mein Tag. Übernehmen: in Scriptable Mein Tag öffnen → Menü → „An Guten Morgen übergeben“ – dann kommen Kürzel, Ordner, Häuser, Kollegium und Kantine (mit Passwort) herüber.") }
+    }
+
+    @ViewBuilder private var mitteilungen: some View {
+        @Bindable var k = kern
+            Section {
+                Toggle("Mitteilungen bei neuen Störungen und Aufgaben", isOn: $k.einstellungen.mitteilungen)
+                    .onChange(of: kern.einstellungen.mitteilungen) { _, an in if an { Task { _ = await Melder.erlauben(); await kern.widgetUebergeben(erzwingen: true) } } }
+            } header: { Text("Mitteilungen") } footer: { Text("Geprüft wird, wenn sich das Widget aktualisiert (mehrmals am Tag, morgens alle 10 Minuten) – dafür muss das Widget auf dem Home-Bildschirm liegen.") }
+    }
+
+    @ViewBuilder private var zuhause: some View {
+        @Bindable var k = kern
+            Section {
+                TextField("https://homeassistant.local:8123", text: $k.einstellungen.haAdresse).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                SecureField("Langlebiges Zugriffstoken", text: $k.token)
+                Toggle("Post und Pakete vorlesen", isOn: $k.einstellungen.post)
+                ForEach($k.einstellungen.nacht) { $a in
+                    VStack(alignment: .leading) {
+                        TextField("Name", text: $a.name)
+                        HStack { TextField("light.turn_off", text: $a.dienst); TextField("all", text: $a.ziel) }.font(.caption).textInputAutocapitalization(.never)
+                    }
+                }
+                .onDelete { k.einstellungen.nacht.remove(atOffsets: $0) }
+                Button("Aktion für „Gute Nacht“ hinzufügen") { k.einstellungen.nacht.append(HAAktion(name: "Neue Aktion", dienst: "light.turn_off", ziel: "all")) }
+            } header: { Text("Home Assistant") } footer: { Text("Token: in Home Assistant unten links auf deinen Namen → Sicherheit → Langlebige Zugriffstoken. Post kommt aus der Integration „Briefankündigung“.") }
+
+            Section {
+                ForEach($k.einstellungen.routine) { $s in
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Name, z. B. Bad heizen", text: $s.name)
+                        HStack { TextField("script.turn_on", text: $s.dienst); TextField("script.bad_heizen", text: $s.ziel) }.font(.caption).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Stepper(s.minuten < 0 ? "\(-s.minuten) min vor dem Wecker" : s.minuten == 0 ? "beim Wecken" : "\(s.minuten) min nach dem Wecker", value: $s.minuten, in: -120...60, step: 5)
+                        if s.dienst == "light.turn_on" {
+                            Stepper(s.langsam == 0 ? "Licht sofort an" : "Licht langsam heller: \(s.langsam / 60) min", value: $s.langsam, in: 0...1800, step: 60)
+                        }
+                    }
+                }
+                .onDelete { k.einstellungen.routine.remove(atOffsets: $0) }
+                Button("Schritt hinzufügen") { k.einstellungen.routine.append(RoutinenSchritt(name: "Bad heizen", dienst: "script.turn_on", ziel: "", minuten: -20)) }
+                Button("Licht langsam an (Vorlage)") { k.einstellungen.routine.append(RoutinenSchritt(name: "Licht langsam an", dienst: "light.turn_on", ziel: "light.schlafzimmer", minuten: -10, langsam: 600)) }
+                Button(kern.einstellungen.routine.isEmpty ? "Morgenroutine aus Home Assistant entfernen" : "In Home Assistant einrichten") { Task { await kern.routineEinrichten() } }
+                if !kern.routineMeldung.isEmpty { Text(kern.routineMeldung).font(.footnote).foregroundStyle(.secondary) }
+            } header: { Text("Morgenroutine (Home Assistant)") } footer: { Text("Die App legt in Home Assistant die Automation „Guten Morgen – Morgenroutine“ an und meldet die Weckzeit als sensor.guten_morgen_wecker. Home Assistant führt die Schritte dann selbst aus – auch wenn das iPhone schläft. Nach Änderungen hier noch einmal „einrichten“ tippen. Braucht einen Zugang mit Admin-Rechten.") }
+
+            Section {
                 Toggle("Unterwegs anders schlafen gehen", isOn: $k.einstellungen.unterwegsAn)
                 if kern.einstellungen.unterwegsAn {
                     Stepper("Unterwegs ab \(kern.einstellungen.zuhauseRadius) m von Zuhause", value: $k.einstellungen.zuhauseRadius, in: 300...20000, step: 100)
@@ -661,56 +825,6 @@ struct EinstellungenAnsicht: View {
             } header: { Text("Anfahrt") } footer: { Text("Rechnet über Apple Karten, wie lange du zur ersten Stunde brauchst (Auto mit Verkehrsprognose, Bus und Bahn nach Fahrplan). Wird es mit der normalen Weckzeit knapp, klingelt der Wecker früher; morgens sagt das Briefing, wann du losfahren musst. Start ist „Zuhause“ (sonst der aktuelle Ort).") }
 
             Section {
-                ForEach($k.einstellungen.routine) { $s in
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField("Name, z. B. Bad heizen", text: $s.name)
-                        HStack { TextField("script.turn_on", text: $s.dienst); TextField("script.bad_heizen", text: $s.ziel) }.font(.caption).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Stepper(s.minuten < 0 ? "\(-s.minuten) min vor dem Wecker" : s.minuten == 0 ? "beim Wecken" : "\(s.minuten) min nach dem Wecker", value: $s.minuten, in: -120...60, step: 5)
-                        if s.dienst == "light.turn_on" {
-                            Stepper(s.langsam == 0 ? "Licht sofort an" : "Licht langsam heller: \(s.langsam / 60) min", value: $s.langsam, in: 0...1800, step: 60)
-                        }
-                    }
-                }
-                .onDelete { k.einstellungen.routine.remove(atOffsets: $0) }
-                Button("Schritt hinzufügen") { k.einstellungen.routine.append(RoutinenSchritt(name: "Bad heizen", dienst: "script.turn_on", ziel: "", minuten: -20)) }
-                Button("Licht langsam an (Vorlage)") { k.einstellungen.routine.append(RoutinenSchritt(name: "Licht langsam an", dienst: "light.turn_on", ziel: "light.schlafzimmer", minuten: -10, langsam: 600)) }
-                Button(kern.einstellungen.routine.isEmpty ? "Morgenroutine aus Home Assistant entfernen" : "In Home Assistant einrichten") { Task { await kern.routineEinrichten() } }
-                if !kern.routineMeldung.isEmpty { Text(kern.routineMeldung).font(.footnote).foregroundStyle(.secondary) }
-            } header: { Text("Morgenroutine (Home Assistant)") } footer: { Text("Die App legt in Home Assistant die Automation „Guten Morgen – Morgenroutine“ an und meldet die Weckzeit als sensor.guten_morgen_wecker. Home Assistant führt die Schritte dann selbst aus – auch wenn das iPhone schläft. Nach Änderungen hier noch einmal „einrichten“ tippen. Braucht einen Zugang mit Admin-Rechten.") }
-
-            Section {
-                Text("1. iPhone-Einstellungen → Fokus → „+“ → Eigener Fokus „Schule“.\n2. Dort „Zeitplan hinzufügen“ → Ort → Schule: dann schaltet iOS den Fokus an, sobald du dort bist.\n3. Unten bei „Fokus-Filter“ → Guten Morgen → „Schul-Infos zuerst“ einschalten.").font(.footnote)
-                Button("iPhone-Einstellungen öffnen") { if let u = URL(string: UIApplication.openSettingsURLString) { oeffneURL(u) } }
-            } header: { Text("Fokus „Schule“") } footer: { Text("Den Fokus selbst darf eine App nicht einschalten – iOS macht das aber zuverlässig nach Ort. Guten Morgen zeigt im Fokus die Schul-Infos zuerst.") }
-
-            Section {
-                Text("Die Apple-Watch-App steckt in der Datei „GutenMorgen-iOS-mit-Uhr“ im Release. Damit installiert, erscheint sie auf der Uhr (Watch-App auf dem iPhone → Verfügbare Apps). Sie zeigt Wecker, was gerade läuft und den Tagesablauf. Die Live-Aktivität erscheint außerdem im Smart Stack der Uhr, und der Wecker klingelt auch dort.").font(.footnote)
-            } header: { Text("Apple Watch") }
-
-            Section {
-                Toggle("Speiseplan zeigen", isOn: $k.einstellungen.mensa)
-                if kern.einstellungen.mensa {
-                    TextField("Adresse des Kantinen-Portals (https://…)", text: $k.einstellungen.mensaAdresse).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    TextField("Benutzername", text: $k.einstellungen.mensaBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("Passwort", text: $k.mensaPasswort)
-                }
-            } header: { Text("Mensa") } footer: { Text("Das Essen des Tages aus dem Kantinen-Portal (PCA) – dieselben Zugangsdaten wie im Browser. Bestellte Gerichte stehen vorne.") }
-
-            Section {
-                Toggle("Schulobst-Tage zeigen", isOn: $k.einstellungen.obst)
-                if kern.einstellungen.obst {
-                    TextField("Kalender-Link (…/calendar.ics)", text: $k.einstellungen.obstKalender).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                }
-            } header: { Text("Schulobst") } footer: { Text("Öffentlicher IServ-Kalender mit den Liefertagen (Kalender → Teilen → öffentlicher Link).") }
-
-            WeckmusikAbschnitt(musik: kern.musik)
-
-            Section {
-                Toggle("Mitteilungen bei neuen Störungen und Aufgaben", isOn: $k.einstellungen.mitteilungen)
-                    .onChange(of: kern.einstellungen.mitteilungen) { _, an in if an { Task { _ = await Melder.erlauben(); await kern.widgetUebergeben(erzwingen: true) } } }
-            } header: { Text("Mitteilungen") } footer: { Text("Geprüft wird, wenn sich das Widget aktualisiert (mehrmals am Tag, morgens alle 10 Minuten) – dafür muss das Widget auf dem Home-Bildschirm liegen.") }
-
-            Section {
                 LabeledContent("Schule", value: kern.einstellungen.schulOrt == nil ? "nicht gesetzt" : "gespeichert")
                 Button("Aktueller Standort ist die Schule") { Task { await kern.ortMerken(schule: true) } }
                 LabeledContent("Zuhause", value: kern.einstellungen.zuhauseOrt == nil ? "nicht gesetzt" : "gespeichert")
@@ -719,57 +833,18 @@ struct EinstellungenAnsicht: View {
                     Button("Orte vergessen", role: .destructive) { k.einstellungen.schulOrt = nil; k.einstellungen.zuhauseOrt = nil }
                 }
             } header: { Text("Orte") } footer: { Text("In der Schule stehen Vertretung, Aufsicht und Mensa oben, zu Hause und am Wochenende Termine und Post & Pakete. Ohne Orte entscheidet die Uhrzeit. Fürs Widget: Ortungsdienste → Guten Morgen → „Beim Verwenden der App oder von Widgets“.") }
+    }
 
-            Section {
-                Toggle("Schlaf aus Apple Health", isOn: $k.einstellungen.gesundheit)
-                    .onChange(of: kern.einstellungen.gesundheit) { _, an in if an { Task { _ = await Gesundheit.erlauben(); await kern.aktualisieren() } } }
-            } header: { Text("Apple Health") } footer: { Text("Zeigt morgens, wie lange du geschlafen hast, und trägt den Nachtmodus als Schlaf („im Bett“) in Health ein.") }
-
-            Section {
-                Toggle("Abwesenheiten (Kinder)", isOn: $k.einstellungen.abwesenheiten)
-                Toggle("Störungsmeldungen", isOn: $k.einstellungen.stoerungen)
-                if kern.einstellungen.abwesenheiten || kern.einstellungen.stoerungen {
-                    TextField("IServ-Adresse, z. B. schule.de", text: $k.einstellungen.iservServer).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    TextField("Benutzername", text: $k.einstellungen.iservBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("Passwort", text: $k.iservPasswort)
-                    SecureField("2FA-Schlüssel (optional)", text: $k.totpGeheim)
-                    if kern.einstellungen.abwesenheiten {
-                        TextField("Nur Klassen, z. B. 2a, 2b (leer = alle)", text: $k.einstellungen.abwesendKlassen).textInputAutocapitalization(.never)
-                        Toggle("Sichtschutz im Widget (nur Vorname + Initiale)", isOn: $k.einstellungen.sichtschutz)
-                    }
-                    if !kern.einstellungen.iservHosts.isEmpty { LabeledContent("Bestätigte Anmeldeseiten", value: kern.einstellungen.iservHosts.joined(separator: ", ")) }
-                    Button("Neu suchen (Module erkunden)") { k.einstellungen.abwesendQuelle = nil; k.einstellungen.stoerungQuelle = nil; Task { await kern.moduleLaden(erzwingen: true) } }
-                }
-            } header: { Text("IServ") } footer: { Text("Wie in den Skripten Abwesenheiten und Störungen. Mit 2FA-Schlüssel (Text unter dem QR-Code beim Einrichten der Zwei-Faktor-Anmeldung) erzeugt die App die Codes selbst – sonst fragt sie danach, und das Widget zeigt nur den letzten Stand. Achtung: Passwort und zweiter Faktor liegen dann auf demselben Gerät. Abwesenheiten werden nur angezeigt, nicht ausgewertet.") }
-
-            Section {
-                if kern.edupoolCode != nil {
-                    Button("Freigabeseite wieder öffnen (Code \(kern.edupoolCode!))") { if let u = kern.edupoolSeite { freigabeSeite = WebSeite(url: u) } }
-                    Button("Abbrechen", role: .cancel) { kern.edupoolCode = nil }
-                } else if kern.edupoolToken.isEmpty {
-                    Button("Mit Edupool Boards verbinden") { Task { await kern.edupoolVerbinden { u in freigabeSeite = WebSeite(url: u) } } }
-                } else {
-                    Toggle("Aufgaben zeigen", isOn: $k.einstellungen.aufgaben)
-                    TextField("Kartenfarbe deiner Aufgaben", text: $k.einstellungen.aufgabenFarbe).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Neu verbinden") { Task { await kern.edupoolVerbinden { u in freigabeSeite = WebSeite(url: u) } } }
-                    Button("Verbindung trennen", role: .destructive) { k.edupoolToken = ""; k.aufgaben = nil; k.einstellungen.aufgaben = false }
-                }
-            } header: { Text("Edupool-Aufgaben") } footer: { Text("Verbinden öffnet die Freigabeseite von Edupool Boards in der App, der Code ist schon eingetragen: anmelden, „Lesen“ anhaken – zum Antworten auf Karten auch „erstellen, ändern“ –, Laufzeit wählen (bis 90 Tage), bestätigen und die Seite schließen. Dein Passwort sieht die App nie.") }
-            .sheet(item: $freigabeSeite) { s in SafariSeite(url: s.url).ignoresSafeArea() }
-
-            Section {
-                TextField("Name des Skripts", text: $k.einstellungen.meinTagSkript).textInputAutocapitalization(.never).autocorrectionDisabled()
-                if !kern.einstellungen.kollegium.isEmpty { LabeledContent("Kollegium", value: "\(kern.einstellungen.kollegium.count) Namen") }
-            } header: { Text("Mein Tag (Scriptable)") } footer: { Text("Abwesenheiten, Störungen und Aufgaben öffnen sich in Mein Tag. Übernehmen: in Scriptable Mein Tag öffnen → Menü → „An Guten Morgen übergeben“ – dann kommen Kürzel, Ordner, Häuser, Kollegium und Kantine (mit Passwort) herüber.") }
-
+    @ViewBuilder private var weiteres: some View {
+        @Bindable var k = kern
             Section("Kalender") {
                 Toggle("Termine", isOn: $k.einstellungen.termine)
                 Toggle("Erinnerungen", isOn: $k.einstellungen.erinnerungen)
             }
 
             Section {
-                TextField("Schulkalender (ICS- oder webcal-Link)", text: $k.einstellungen.schulKalender).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-            } header: { Text("Schultermine") } footer: { Text("Öffentlicher Kalender der Schule (z. B. aus IServ „Abonnieren“). Die kommenden Termine stehen dann in der Schul-Übersicht.") }
+                Text("Die Apple-Watch-App steckt in der Datei „GutenMorgen-iOS-mit-Uhr“ im Release. Damit installiert, erscheint sie auf der Uhr (Watch-App auf dem iPhone → Verfügbare Apps). Sie zeigt Wecker, was gerade läuft und den Tagesablauf. Die Live-Aktivität erscheint außerdem im Smart Stack der Uhr, und der Wecker klingelt auch dort.").font(.footnote)
+            } header: { Text("Apple Watch") }
 
             Section {
                 Toggle("Abrechnung automatisch abrufen", isOn: $k.einstellungen.gehaltAuto)
@@ -790,37 +865,8 @@ struct EinstellungenAnsicht: View {
                         .onChange(of: kern.einstellungen.gehaltTag) { _, _ in GehaltErinnerung.planen(an: true, tag: kern.einstellungen.gehaltTag) }
                 }
             } header: { Text("Personaldaten") } footer: { Text("„Automatisch abrufen“: einmal am Tag (Mo–Fr, zufällig zwischen 11 und 15 Uhr), während die App vorne ist, meldet sie sich still im Portal an und lädt eine neue Abrechnung, falls das Portal eine zeigt. Dein Konto wird nicht laufend abgefragt. Alternativ nur eine monatliche Erinnerung.") }
-
-            Section {
-                ForEach(kachelOrdnungEinstellung) { kc in
-                    Toggle(isOn: kachelAn(kc)) { Label(kc.name, systemImage: kc.symbol) }
-                }
-                    .onMove { from, to in
-                        var arr = kachelOrdnungEinstellung.map(\.rawValue)
-                        arr.move(fromOffsets: from, toOffset: to)
-                        k.einstellungen.kachelReihenfolge = arr
-                    }
-                if !kern.einstellungen.kachelReihenfolge.isEmpty {
-                    Button("Automatische Reihenfolge") { k.einstellungen.kachelReihenfolge = [] }
-                }
-            } header: { HStack { Text("Startseite"); Spacer(); EditButton() } } footer: { Text("Schalter: Kachel zeigen oder ausblenden. „Bearbeiten“, dann ziehen zum Verschieben. „Automatisch“: in der Schule steht die Schule oben, zu Hause und am Wochenende Termine und Post. Kacheln ohne Inhalt (z. B. keine Schultermine) erscheinen von selbst nicht.") }
-
-            Section {
-                Button("Widget verbinden") { Task { await kern.widgetUebergeben(erzwingen: true) } }
-            } header: { Text("Widget") } footer: { Text("Gibt dem Widget Einstellungen und Zugang (kurz erscheint eine Live-Aktivität). Passiert beim Öffnen der App auch von selbst.") }
-
-            Section("Über") {
-                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
-                Link("Guten Morgen auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(Hintergrund(farbton: kern.farbton))
-        .onAppear { haeuserText = Vertretung.text(haeuser: kern.einstellungen.haeuser) }
-        .navigationTitle("Einstellungen")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { schliessen(); Task { await kern.aktualisieren() } } } }
     }
+
 }
 
 struct WeckmusikAbschnitt: View {
@@ -922,12 +968,15 @@ struct StundenZeile: View {
 }
 
 
-/// Adresse für eine Safari-Ansicht als Blatt
-struct WebSeite: Identifiable { let url: URL; var id: String { url.absoluteString } }
-
-/// Safari in der App (Anmeldung, Cookies wie in Safari) – die App bleibt im Vordergrund
-struct SafariSeite: UIViewControllerRepresentable {
-    let url: URL
-    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
-    func updateUIViewController(_ c: SFSafariViewController, context: Context) {}
+/// Safari in der App (Anmeldung wie in Safari) – die App bleibt im Vordergrund. Direkt über UIKit auf dem obersten
+/// Bildschirm gezeigt: als SwiftUI-Blatt im Einstellungs-Blatt blieb die Seite weiß.
+enum SafariSeite {
+    @MainActor static func zeigen(_ url: URL) {
+        let szene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
+        guard var oben = szene?.keyWindow?.rootViewController ?? szene?.windows.first?.rootViewController else { UIApplication.shared.open(url); return }
+        while let p = oben.presentedViewController, !p.isBeingDismissed { oben = p }
+        let s = SFSafariViewController(url: url)
+        s.modalPresentationStyle = .pageSheet
+        oben.present(s, animated: true)
+    }
 }
