@@ -332,7 +332,7 @@ struct SchuleKarte: View {
         switch teil {
         case .tag: schultag
         case .mensa:
-            Karte(symbol: "fork.knife", farbe: .orange, titel: "Speiseplan " + kern.schulTagName) {
+            Karte(symbol: "fork.knife", farbe: .orange, titel: "Speiseplan " + kern.essenTagName) {
                 Button { oeffne(.mensa) } label: { mensa(kern.einstellungen) }.buttonStyle(.plain)
             }
         case .zahlen: zahlen

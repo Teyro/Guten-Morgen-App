@@ -162,6 +162,9 @@ final class MorgenKernTests: XCTestCase {
         XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 9, 16, 0))), "2026-11-10")
         XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 13, 17))), "2026-11-16")
         XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 14, 8))), "2026-11-16")
+        // Essen: Freitag nach dem Mittag (14 Uhr) schon Montag, die Schule erst ab 16 Uhr
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 13, 14), ab: Tagwahl.essenStunde)), "2026-11-16")
+        XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 13, 13), ab: Tagwahl.essenStunde)), "2026-11-13")
         let frei = [FreierTag(von: "2026-11-10", bis: "2026-11-10", name: "Studientag", ferien: false)]
         XCTAssertEqual(Zeit.iso(Tagwahl.ziel(tag(2026, 11, 9, 18), frei: frei)), "2026-11-11")
         XCTAssertEqual(Mensa.guthabenAus("<div id=\"balancePanel\">GUTHABEN (GESAMT) 20,00 € Verfügbar: 1.012,40 € Reservierte Speisen: 7,60 €</div>"), 1012.40)

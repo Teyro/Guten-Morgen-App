@@ -93,10 +93,12 @@ public struct MensaPlan: Codable, Hashable, Sendable {
 /// Für welchen Tag Schul-Infos gelten: bis 16 Uhr heute, danach der nächste Schultag (Wochenende und freie Tage übersprungen)
 public enum Tagwahl {
     public static let umschaltStunde = 16
-    public static func ziel(_ jetzt: Date = Date(), frei: [FreierTag] = []) -> Date {
+    /// Speiseplan schaltet schon nach dem Mittag um – freitags damit auf die nächste Woche
+    public static let essenStunde = 14
+    public static func ziel(_ jetzt: Date = Date(), frei: [FreierTag] = [], ab: Int = umschaltStunde) -> Date {
         let k = Zeit.kalender
         var d = k.startOfDay(for: jetzt)
-        if k.component(.hour, from: jetzt) >= umschaltStunde { d = k.date(byAdding: .day, value: 1, to: d) ?? d }
+        if k.component(.hour, from: jetzt) >= ab { d = k.date(byAdding: .day, value: 1, to: d) ?? d }
         for _ in 0..<30 {
             let wt = k.component(.weekday, from: d)
             if wt != 1 && wt != 7 && FreieTage.am(frei, d) == nil { break }

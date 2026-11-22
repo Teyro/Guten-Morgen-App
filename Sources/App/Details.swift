@@ -56,7 +56,7 @@ struct MensaAnsicht: View {
                 Section { held(p, e).listRowBackground(Color.clear).listRowSeparator(.hidden) }
                 Section { kennzahlen(p).listRowBackground(Color.clear).listRowSeparator(.hidden) }
                 // alle Wochen untereinander (wie im Kantinen-Widget), jede mit Überschrift
-                let wochen = wochen(p.tage)
+                let wochen = wochen(p.tage.filter { $0.datum >= Zeit.iso(kern.essenTag) })
                 ForEach(wochen.indices, id: \.self) { i in
                     if wochen.count > 1 {
                         Text(wochen[i].0).font(.title3.weight(.bold)).padding(.top, 8).listRowBackground(Color.clear).listRowSeparator(.hidden)
@@ -93,20 +93,20 @@ struct MensaAnsicht: View {
         .tint(Kantine.akzent)
         .navigationTitle("Speiseplan")
         .refreshable { await kern.aktualisieren() }
-        .onAppear { woche = wochen(kern.mensaPlan?.tage ?? []).firstIndex { w in w.1.contains { $0.datum == Zeit.iso(kern.schulTag) } } ?? 0 }
+        .onAppear { woche = wochen(kern.mensaPlan?.tage ?? []).firstIndex { w in w.1.contains { $0.datum == Zeit.iso(kern.essenTag) } } ?? 0 }
     }
 
     // MARK: Teile
 
     /// Held: was es (für dich) heute bzw. morgen gibt
     @ViewBuilder private func held(_ p: MensaPlan, _ e: MorgenEinstellungen) -> some View {
-        let t = p.tag(Zeit.iso(kern.schulTag))
+        let t = p.tag(Zeit.iso(kern.essenTag))
         let g = t?.haupt(favoriten: e.favoriten, meiden: e.meiden, gut: e.lieblingsGerichte, schlecht: e.nichtLecker)
         HStack(spacing: 14) {
             Text(g?.emoji ?? (t?.frei != nil ? "🏖️" : "🍽️")).font(.system(size: 40)).frame(width: 72, height: 72)
                 .background(Kantine.akzent.opacity(0.22), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             VStack(alignment: .leading, spacing: 5) {
-                Text(kern.schulTagName.uppercased()).font(.caption2.weight(.heavy)).tracking(0.5).foregroundStyle(Kantine.akzent)
+                Text(kern.essenTagName.uppercased()).font(.caption2.weight(.heavy)).tracking(0.5).foregroundStyle(Kantine.akzent)
                     .padding(.horizontal, 7).padding(.vertical, 2).background(Kantine.akzent.opacity(0.2), in: RoundedRectangle(cornerRadius: 7))
                 Text(g?.text ?? (t?.frei.map { "Geschlossen" + ($0.isEmpty ? "" : " – \($0)") } ?? "Kein Essen eingetragen")).font(.title3.weight(.bold)).lineLimit(4)
                 if let g {

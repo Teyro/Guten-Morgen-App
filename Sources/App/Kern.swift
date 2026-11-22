@@ -89,7 +89,10 @@ final class Kern {
     /// Für welchen Tag die Schul-Infos gelten: bis 16 Uhr heute, danach der nächste Schultag
     var schulTag: Date { Tagwahl.ziel(Date(), frei: frei) }
     var schulTagName: String { Tagwahl.name(schulTag) }
-    var mensa: MensaTag? { mensaPlan?.tag(Zeit.iso(schulTag)) }
+    /// Tag fürs Essen: bis 14 Uhr heute, danach der nächste Schultag (Freitagnachmittag = Montag)
+    var essenTag: Date { Tagwahl.ziel(Date(), frei: frei, ab: Tagwahl.essenStunde) }
+    var essenTagName: String { Tagwahl.name(essenTag) }
+    var mensa: MensaTag? { mensaPlan?.tag(Zeit.iso(essenTag)) }
     var obstHeute: Bool { obstTage.contains(Zeit.iso(schulTag)) }
     var meldung = ""
     var weckerText = ""
@@ -340,7 +343,7 @@ final class Kern {
         case nil: vertretung = nil; vertretungFehler = ""
         }
         switch await m {
-        case .success(let t)?: mensaPlan = t; mensaFehler = t.tag(ziel) == nil ? "Für \(schulTagName) steht nichts im Speiseplan" : ""
+        case .success(let t)?: mensaPlan = t; mensaFehler = t.tag(Zeit.iso(essenTag)) == nil ? "Für \(essenTagName) steht nichts im Speiseplan" : ""
             Mensa.merke(.standard, fehler: nil, benutzer: e.mensaBenutzer, passwort: mpw)
         case .failure(let f)?: mensaFehler = f.localizedDescription
             Mensa.merke(.standard, fehler: f, benutzer: e.mensaBenutzer, passwort: mpw)
