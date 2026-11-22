@@ -27,13 +27,13 @@ public extension VertretungsPlan {
     static func bemerkungen(_ absaetze: [String], kuerzel k: String) -> [Bemerkung] {
         guard !k.isEmpty else { return [] }
         var aus: [Bemerkung] = []
-        for absatz in absaetze where hat(absatz, k) {
+        for absatz in absaetze where Vertretung.hat(absatz, k) {
             // Kontext: alles vor der ersten Stunden- bzw. Kürzelangabe („FSJ Ella (Paul) 2c krank Begleitung Kim“)
-            let klasse = treffer(#"(?<![\w])(VSK\s?[a-c1-3]?|[1-4][a-d])(?![\w])"#, absatz, gruppe: 1).first ?? ""
-            let begleitung = treffer(#"(Begleitung|begleitet|Betreuung|Schulbegleitung)\s+([A-ZÄÖÜ][\p{L}-]+)"#, absatz, gruppe: 0).first ?? ""
-            let zeit = treffer(#"(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})"#, absatz, gruppe: 0).first.map { $0.replacingOccurrences(of: "-", with: "–").replacingOccurrences(of: " ", with: "") } ?? ""
+            let klasse = Vertretung.treffer(#"(?<![\w])(VSK\s?[a-c1-3]?|[1-4][a-d])(?![\w])"#, absatz, gruppe: 1).first ?? ""
+            let begleitung = Vertretung.treffer(#"(Begleitung|begleitet|Betreuung|Schulbegleitung)\s+([A-ZÄÖÜ][\p{L}-]+)"#, absatz, gruppe: 0).first ?? ""
+            let zeit = Vertretung.treffer(#"(\d{1,2}[:.]\d{2})\s*[-–]\s*(\d{1,2}[:.]\d{2})"#, absatz, gruppe: 0).first.map { $0.replacingOccurrences(of: "-", with: "–").replacingOccurrences(of: " ", with: "") } ?? ""
             // in Abschnitte zerlegen: „… 1.-3. Xyz, 4. Def“ → [„… 1.-3. Xyz“, „4. Def“]
-            for teil in absatz.components(separatedBy: CharacterSet(charactersIn: ",;")) where hat(teil, k) {
+            for teil in absatz.components(separatedBy: CharacterSet(charactersIn: ",;")) where Vertretung.hat(teil, k) {
                 var stunden: [Int] = []
                 if let re = try? NSRegularExpression(pattern: stundenMuster) {
                     let ns = teil as NSString

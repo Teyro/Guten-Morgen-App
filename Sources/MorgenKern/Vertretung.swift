@@ -302,7 +302,7 @@ public enum Vertretung {
             if t.hasPrefix("wichtig"), z.count > 1 {
                 let absaetze = treffer(#"<w:p[ >][\s\S]*?</w:p>"#, z[1].xml, gruppe: 0).map(text).filter { !$0.isEmpty }
                 p.alleHinweise += absaetze
-                if !k.isEmpty { p.hinweise += absaetze.filter { hat($0, k) }; p.bemerkungen = (p.bemerkungen ?? []) + bemerkungen(absaetze, kuerzel: k) }
+                if !k.isEmpty { p.hinweise += absaetze.filter { hat($0, k) }; p.bemerkungen = (p.bemerkungen ?? []) + VertretungsPlan.bemerkungen(absaetze, kuerzel: k) }
             }
             let pausen = z.filter { $0.text.range(of: #"^\d\.\s*[Pp]ause$"#, options: .regularExpression) != nil }
             if !pausen.isEmpty { pausenSpalten = pausen; continue }
