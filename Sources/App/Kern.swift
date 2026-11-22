@@ -213,7 +213,7 @@ final class Kern {
         guard e.untisAn, !e.untisLink.isEmpty, !untisPasswort.isEmpty || !untisSchluessel.isEmpty || Untis.qr(e.untisLink) != nil else { return }
         let d = UserDefaults.standard
         guard erzwingen || Date().timeIntervalSince1970 - d.double(forKey: "untisGeladen") > 6 * 3600 else { return }
-        let kuerzel = e.kuerzel.isEmpty ? e.untisBenutzer : e.kuerzel
+        let kuerzel = e.untisName
         var st: UntisStand?
         do {
             st = try await Untis.laden(link: e.untisLink, schule: e.untisSchule, benutzer: e.untisBenutzer, passwort: untisPasswort,
@@ -243,7 +243,7 @@ final class Kern {
 
     /// Eigener Plan als Element (über das Kürzel)
     var ichAlsElement: UntisElement? {
-        let k = einstellungen.kuerzel.isEmpty ? einstellungen.untisBenutzer : einstellungen.kuerzel
+        let k = einstellungen.untisName
         return k.isEmpty ? nil : UntisElement(typ: 2, name: k, lang: "Mein Stundenplan")
     }
 

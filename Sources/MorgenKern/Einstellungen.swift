@@ -44,7 +44,12 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var post = true
     public var vertretung = true
     public var vertretungLink = ""
+    /// Kürzel im Vertretungsplan (z. B. „Gri“)
     public var kuerzel = ""
+    /// Kürzel in Untis, falls es anders heißt (z. B. „Geo“) – leer = wie im Vertretungsplan
+    public var untisKuerzel = ""
+    /// Name, unter dem man in Untis steht
+    public var untisName: String { !untisKuerzel.isEmpty ? untisKuerzel : !kuerzel.isEmpty ? kuerzel : untisBenutzer }
     public var termine = true
     public var erinnerungen = true
     /// Häuser der Klassen („Haus 1“: [1a, 1b]) – damit die Vertretung sagt, wohin
@@ -155,7 +160,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
-             nacht, morgen, post, vertretung, vertretungLink, kuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
+             nacht, morgen, post, vertretung, vertretungLink, kuerzel, untisKuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
              mitteilungen, vertretungMelden, vertretungDa, vertretungDringend, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
@@ -172,7 +177,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         ferienFrei = w(.ferienFrei, s.ferienFrei); feiertagFrei = w(.feiertagFrei, s.feiertagFrei); bundesland = w(.bundesland, s.bundesland)
         weckerAutomatisch = w(.weckerAutomatisch, s.weckerAutomatisch); ortName = w(.ortName, s.ortName); lat = w(.lat, s.lat); lon = w(.lon, s.lon)
         haAdresse = w(.haAdresse, s.haAdresse); nacht = w(.nacht, s.nacht); morgen = w(.morgen, s.morgen); post = w(.post, s.post)
-        vertretung = w(.vertretung, s.vertretung); vertretungLink = w(.vertretungLink, s.vertretungLink); kuerzel = w(.kuerzel, s.kuerzel)
+        vertretung = w(.vertretung, s.vertretung); vertretungLink = w(.vertretungLink, s.vertretungLink); kuerzel = w(.kuerzel, s.kuerzel); untisKuerzel = w(.untisKuerzel, s.untisKuerzel)
         termine = w(.termine, s.termine); erinnerungen = w(.erinnerungen, s.erinnerungen)
         haeuser = w(.haeuser, s.haeuser); mensa = w(.mensa, s.mensa); mensaAdresse = w(.mensaAdresse, s.mensaAdresse)
         mensaBenutzer = w(.mensaBenutzer, s.mensaBenutzer); obst = w(.obst, s.obst); obstKalender = w(.obstKalender, s.obstKalender)

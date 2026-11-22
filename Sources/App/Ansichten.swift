@@ -634,7 +634,8 @@ struct EinstellungenAnsicht: View {
                 Toggle("Vertretungsplan", isOn: $k.einstellungen.vertretung)
                 TextField("Freigabe-Link (https://…/s/…)", text: $k.einstellungen.vertretungLink).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Freigabe-Passwort (falls gesetzt)", text: $k.freigabePasswort)
-                TextField("Kürzel, z. B. Sta", text: $k.einstellungen.kuerzel).textInputAutocapitalization(.never)
+                TextField("Kürzel im Vertretungsplan, z. B. Sta", text: $k.einstellungen.kuerzel).textInputAutocapitalization(.never)
+                TextField("Kürzel in Untis, falls anders", text: $k.einstellungen.untisKuerzel).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Toggle("Mitteilung, sobald der neue Plan da ist", isOn: $k.einstellungen.vertretungDa)
                     .onChange(of: kern.einstellungen.vertretungDa) { _, an in if an { Task { _ = await Melder.erlauben() } } }
                 Toggle("Mitteilung, wenn mich der Plan betrifft", isOn: $k.einstellungen.vertretungMelden)

@@ -113,7 +113,7 @@ struct StundenplanWoche: View {
                     if s.foerder { marke("Förderkreis", .teal) }
                 }
                 Text([s.klassen.joined(separator: ", "), s.raum].filter { !$0.isEmpty }.joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary)
-                let andere = s.lehrer.filter { $0.lowercased() != kern.einstellungen.kuerzel.lowercased() }
+                let andere = s.lehrer.filter { $0.lowercased() != kern.einstellungen.untisName.lowercased() }
                 if !andere.isEmpty { Label("mit " + andere.map(name).joined(separator: ", "), systemImage: "person.2.fill").font(.caption).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 0)

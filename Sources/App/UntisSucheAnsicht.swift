@@ -79,14 +79,19 @@ struct UntisPlanAnsicht: View {
 
     /// Aus dem Vertretungsplan (nur der eigene Plan, nur am Tag des Plans): Vertretungen und Bemerkungen („Begleitung Kim · 2c“)
     private func plan(_ datum: String) -> VertretungsPlan? {
-        guard vertretungen, istIch, let p = kern.vertretung, p.datum == datum else { return nil }
+        guard vertretungen, let p = kern.vertretung, p.datum == datum else { return nil }
         return p
+    }
+    /// Bemerkungen (Begleitung …): eigene – oder die jeder anderen Lehrkraft aus der ganzen „Wichtig“-Zeile
+    private func bemerkungen(_ datum: String) -> [Bemerkung] {
+        guard let p = plan(datum) else { return [] }
+        return istIch ? (p.bemerkungen ?? []) : element.typ == 2 ? VertretungsPlan.bemerkungen(p.alleHinweise, kuerzel: element.name) : []
     }
     private func extras(_ datum: String, _ z: Schulzeit) -> [String] {
         guard let p = plan(datum), !z.pause else { return [] }
         let nr = Int(z.name) ?? -1
-        return p.stunden.filter { $0.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) == z.name }.map { "Vertretung \($0.klasse)" }
-            + (p.bemerkungen ?? []).filter { $0.stunden.contains(nr) }.map { "📌 " + $0.titel }
+        return (istIch ? p.stunden.filter { $0.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) == z.name }.map { "Vertretung \($0.klasse)" } : [])
+            + bemerkungen(datum).filter { $0.stunden.contains(nr) }.map { "📌 " + $0.titel }
     }
     /// Aufsicht in der Pause (aus dem Vertretungsplan des Tages): eigene – oder die der Lehrkraft, deren Plan das ist
     private func pausenText(_ datum: String, _ z: Schulzeit) -> String? {

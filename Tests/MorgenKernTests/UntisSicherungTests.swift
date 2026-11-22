@@ -75,6 +75,21 @@ final class BemerkungenTests: XCTestCase {
         XCTAssertEqual(wa.first?.zeit, "8:30–13:00")
         XCTAssertTrue(VertretungsPlan.bemerkungen(absaetze, kuerzel: "Nix").isEmpty)
     }
+
+    /// Schreibweisen aus echten Plänen vom 18.–20.11.2026 (Namen und Kürzel geändert) – gilt für jedes Kürzel
+    func testEchteSchreibweisen() {
+        struct B: Equatable { let was: String, klasse: String, stunden: [Int] }
+        func l(_ a: [String], _ k: String) -> [B] { VertretungsPlan.bemerkungen(a, kuerzel: k).map { B(was: $0.was, klasse: $0.klasse, stunden: $0.stunden) } }
+        let fr = ["SCP – Beratung 8:00-10:00", "FSJ Lola ab 11:00 da; FSJ Ali 2c krank; FSJ Mia 4a krank, FSJ Ella 2c krank-> Begleitung Kim: 1. Abc, 2.-4. Xyz, 5. Abc",
+                  "SB Tom 2a/3b krank -> V SB Ben;      SB Jan 2a->Begleitung Lio:1.Xyz ,2.+3.Def, 4.Hox, 5.Xyz", "Begleitung Mo 2c: 1. Hox, 2.-4. Abc"]
+        XCTAssertEqual(l(fr, "Xyz"), [B(was: "Begleitung Kim", klasse: "2c", stunden: [2, 3, 4]), B(was: "Begleitung Lio", klasse: "2a", stunden: [1, 5])])
+        XCTAssertEqual(l(fr, "Abc"), [B(was: "Begleitung Kim", klasse: "2c", stunden: [1, 5]), B(was: "Begleitung Mo", klasse: "2c", stunden: [2, 3, 4])])
+        let mi = ["Begleitungen: Tim: 1.,.2Wqx, 3.,4.Def, 5.Abc", "Emil: 1.Hox, 2.Abc, 3.Hox, 4.,5.Wqx", "Kim: 1.Xyz, 2.,3.Def, 4.,5.Xyz  "]
+        XCTAssertEqual(l(mi, "Xyz"), [B(was: "Begleitung Kim", klasse: "", stunden: [1, 4, 5])])
+        XCTAssertEqual(l(mi, "Wqx"), [B(was: "Begleitung Tim", klasse: "", stunden: [1, 2]), B(was: "Begleitung Emil", klasse: "", stunden: [4, 5])])
+        let don = ["Xyz 2.-4. Lio (2c)FSJ Sofie (VSK) krank", "FSJ Elli (2c)  Begleitung Kim: 1. Wqx, 2.+3. Def, 4.?, 5. Xyz"]
+        XCTAssertEqual(l(don, "Xyz"), [B(was: "Begleitung Lio", klasse: "2c", stunden: [2, 3, 4]), B(was: "Begleitung Kim", klasse: "2c", stunden: [5])])
+    }
 }
 
 
