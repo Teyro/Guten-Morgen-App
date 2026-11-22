@@ -104,7 +104,7 @@ struct StundenplanWoche: View {
                 Text(Zeit.hhmm(s.bis)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             .frame(width: 56, alignment: .trailing)
-            RoundedRectangle(cornerRadius: 2).fill(s.entfaellt ? Color.gray : s.foerder ? Color.teal : kern.farbton.akzent).frame(width: 4)
+            RoundedRectangle(cornerRadius: 2).fill(fachFarbe(s)).frame(width: 6)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(s.fachLang.isEmpty ? s.fach : s.fachLang).font(.title3.weight(.semibold)).strikethrough(s.entfaellt)
@@ -119,7 +119,23 @@ struct StundenplanWoche: View {
             Spacer(minLength: 0)
         }
         .padding(14)
-        .glas(20)
+        .glas(20, farbe: fachFarbe(s).opacity(0.6))
+        .opacity(vorbei(s) ? 0.4 : 1)
+        .saturation(vorbei(s) ? 0 : 1)
+    }
+
+    /// Fachfarbe wie in DammTable (Deutsch rot, Mathe blau, Sachunterricht grün …)
+    private func fachFarbe(_ s: UntisStunde) -> Color {
+        if s.entfaellt { return .gray }
+        if s.foerder { return .teal }
+        return Fachfarbe.hex(s.fach, s.fachLang).map(FarbWahl.farbe) ?? kern.farbton.akzent
+    }
+
+    /// Heute schon gelaufen → ausgegraut
+    private func vorbei(_ s: UntisStunde) -> Bool {
+        guard s.datum == Zeit.iso(Date()) else { return s.datum < Zeit.iso(Date()) }
+        let k = Zeit.kalender.dateComponents([.hour, .minute], from: Date())
+        return (k.hour ?? 0) * 60 + (k.minute ?? 0) >= s.bis
     }
 
     private func marke(_ t: String, _ f: Color) -> some View {
