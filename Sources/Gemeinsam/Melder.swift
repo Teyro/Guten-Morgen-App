@@ -80,6 +80,15 @@ enum Melder {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
     }
 
+    /// Neue Version auf GitHub: einmal je Version melden (Tippen öffnet die Release-Seite mit der IPA)
+    static func neueVersion(_ v: String) {
+        let d = UserDefaults.standard
+        guard d.string(forKey: "updateGemeldet") != v else { return }
+        d.set(v, forKey: "updateGemeldet")
+        melde(id: "update-\(v)", titel: "DammAPP \(v) ist da", text: "Tippen öffnet die neue IPA – in Signulous neu signieren und installieren.",
+              link: "https://github.com/Teyro/Guten-Morgen-App/releases/latest")
+    }
+
     static func erlauben() async -> Bool {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }

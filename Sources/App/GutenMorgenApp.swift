@@ -48,7 +48,7 @@ struct GutenMorgenApp: App {
                 }
                 .onAppear {
                     if !kern.vorschau { Uhr.shared.starten(kern) }
-                    AppDelegate.oeffnen = { u in kern.bereich = Bereich(rawValue: u.host ?? "") }
+                    AppDelegate.oeffnen = { u in if u.scheme == "https" { UIApplication.shared.open(u) } else { kern.bereich = Bereich(rawValue: u.host ?? "") } }
                     if kern.vorschau, ProcessInfo.processInfo.environment["GM_ANSICHT"] == "einstellungen" { kern.einstellungenOffen = true }
                     if kern.vorschau, ProcessInfo.processInfo.environment["GM_ANSICHT"] == "stoerungen" { kern.bereich = .stoerungen }
                 }

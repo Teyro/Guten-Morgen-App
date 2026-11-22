@@ -539,6 +539,22 @@ final class Kern {
         }
         GehaltErinnerung.planen(an: e.gehaltErinnern, tag: e.gehaltTag)
         await untisLaden(erzwingen: erzwingen)
+        await updateSuchen()
+    }
+
+    /// Neue Version? Höchstens alle 6 Stunden auf GitHub nachsehen und einmal melden
+    var updateNeu: String?
+    func updateSuchen() async {
+        guard !vorschau, Date().timeIntervalSince1970 - UserDefaults.standard.double(forKey: "updateGesucht") > 6 * 3600 else { return }
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "updateGesucht")
+        var r = URLRequest(url: URL(string: "https://api.github.com/repos/Teyro/Guten-Morgen-App/releases/latest")!, timeoutInterval: 20)
+        r.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (d, _) = try? await URLSession.shared.data(for: r), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let tag = (o["tag_name"] as? String)?.replacingOccurrences(of: "v", with: "") else { return }
+        let ich = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        guard tag.compare(ich, options: .numeric) == .orderedDescending else { updateNeu = nil; return }
+        updateNeu = tag
+        Melder.neueVersion(tag)
     }
 
     /// Edupool verbinden: Code holen, Freigabeseite öffnen, dann abholen (bis bestätigt oder abgelaufen)
