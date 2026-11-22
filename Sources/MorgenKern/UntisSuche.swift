@@ -94,9 +94,10 @@ public extension Untis {
         let r = raster(zeiten)
         let belegt = r.indices.filter { i in !r[i].pause && stunden.contains { $0.von < r[i].bis && $0.bis > r[i].von } }
         guard let a = belegt.first, let b = belegt.last else { return r.filter { $0.name != "0" } }
-        // immer ab der 1. Stunde (Schulbeginn), die 0. Stunde nur, wenn sie in der Woche belegt ist
+        // wie DammTable: ab der 1. Stunde (die 0. nur, wenn sie in der Woche belegt ist), dann alle Stunden bis zum Schluss
         let start = min(a, r.firstIndex { $0.name == "1" } ?? a)
-        return Array(r[start...max(b, start)])
+        let ende = max(b, r.lastIndex { !$0.pause } ?? b, start)
+        return Array(r[start...ende])
     }
 
     /// Stunden an [datum], die in die Zeile [z] fallen (Doppelstunden in beiden Zeilen)

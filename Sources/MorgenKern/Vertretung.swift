@@ -32,6 +32,8 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var datei = ""
     /// Wie viele Zellen im Stundenteil ausgefüllt sind (leere Vorlage = 0)
     public var belegt = 0
+    /// Bemerkungen aus der „Wichtig“-Zeile für das eigene Kürzel (Begleitung, Termin …) – optional: alte Speicherstände
+    public var bemerkungen: [Bemerkung]? = nil
     public init() {}
 
     /// „2. Stunde 2c in Haus 1, 2. Pause Aufsicht Mensa.“ – [haeuser]: Haus → Klassen
@@ -300,7 +302,7 @@ public enum Vertretung {
             if t.hasPrefix("wichtig"), z.count > 1 {
                 let absaetze = treffer(#"<w:p[ >][\s\S]*?</w:p>"#, z[1].xml, gruppe: 0).map(text).filter { !$0.isEmpty }
                 p.alleHinweise += absaetze
-                if !k.isEmpty { p.hinweise += absaetze.filter { hat($0, k) } }
+                if !k.isEmpty { p.hinweise += absaetze.filter { hat($0, k) }; p.bemerkungen = (p.bemerkungen ?? []) + bemerkungen(absaetze, kuerzel: k) }
             }
             let pausen = z.filter { $0.text.range(of: #"^\d\.\s*[Pp]ause$"#, options: .regularExpression) != nil }
             if !pausen.isEmpty { pausenSpalten = pausen; continue }

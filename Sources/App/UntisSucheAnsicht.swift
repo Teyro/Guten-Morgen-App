@@ -68,9 +68,34 @@ struct UntisPlanAnsicht: View {
     @State private var ansicht = 1
     @State private var montag = Untis.montag()
     @State private var tag = Zeit.iso(Date())
-    @State private var stunden: [UntisStunde] = []
+    @State private var roh: [UntisStunde] = []
+
+    /// Mit Vertretungen: wie Untis sie meldet (Ausfall, Vertretung); ohne: der nackte Plan (ursprüngliche Stunden, keine Zusatztermine)
+    private var stunden: [UntisStunde] {
+        vertretungen ? roh : roh.filter { $0.code != "irregular" || !$0.lehrer.isEmpty }.map { var s = $0; s.code = ""; return s }
+    }
+
+    private var istIch: Bool { element.id == kern.ichAlsElement?.id }
+
+    /// Aus dem Vertretungsplan (nur der eigene Plan, nur am Tag des Plans): Vertretungen und Bemerkungen („Begleitung Kim · 2c“)
+    private func plan(_ datum: String) -> VertretungsPlan? {
+        guard vertretungen, istIch, let p = kern.vertretung, p.datum == datum else { return nil }
+        return p
+    }
+    private func extras(_ datum: String, _ z: Schulzeit) -> [String] {
+        guard let p = plan(datum), !z.pause else { return [] }
+        let nr = Int(z.name) ?? -1
+        return p.stunden.filter { $0.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) == z.name }.map { "Vertretung \($0.klasse)" }
+            + (p.bemerkungen ?? []).filter { $0.stunden.contains(nr) }.map { "📌 " + $0.titel }
+    }
+    private func pausenText(_ datum: String, _ z: Schulzeit) -> String? {
+        guard let p = plan(datum), z.pause else { return nil }
+        return p.pausen.first { $0.pause.lowercased().hasPrefix(z.name.lowercased().prefix(2)) }.map { "Aufsicht \($0.ort)" + ($0.reserve ? " (Reserve)" : "") }
+    }
     @State private var fehler = ""
     @State private var laedt = false
+    /// Vertretungsplan über die Stunden legen (an) oder nur der reine Untis-Plan (aus)
+    @AppStorage("untisVertretungen") private var vertretungen = true
 
     private var tage: [Date] { (0..<5).compactMap { Zeit.kalender.date(byAdding: .day, value: $0, to: montag) } }
 
@@ -98,6 +123,13 @@ struct UntisPlanAnsicht: View {
         .navigationTitle(element.name)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button { vertretungen.toggle() } label: {
+                    Label("Vertretungen", systemImage: vertretungen ? "arrow.triangle.swap" : "calendar")
+                        .foregroundStyle(vertretungen ? Color.orange : Color.secondary)
+                }
+                .accessibilityLabel(vertretungen ? "Vertretungen ausblenden (nur Untis-Plan)" : "Vertretungen einblenden")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button { kern.favoritUmschalten(element) } label: { Image(systemName: kern.favorit(element) ? "heart.fill" : "heart").foregroundStyle(.pink) }
                     .accessibilityLabel(kern.favorit(element) ? "Aus den Favoriten entfernen" : "Zu den Favoriten")
             }
@@ -110,8 +142,8 @@ struct UntisPlanAnsicht: View {
 
     private func laden() async {
         laedt = true; defer { laedt = false }
-        do { stunden = try await kern.plan(element, montag: montag); fehler = stunden.isEmpty ? "In dieser Woche keine Stunden." : "" }
-        catch { stunden = []; fehler = error.localizedDescription }
+        do { roh = try await kern.plan(element, montag: montag); fehler = roh.isEmpty ? "In dieser Woche keine Stunden." : "" }
+        catch { roh = []; fehler = error.localizedDescription }
         if !tage.map(Zeit.iso).contains(tag) { tag = Zeit.iso(montag) }
     }
 
