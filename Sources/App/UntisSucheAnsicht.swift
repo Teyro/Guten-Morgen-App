@@ -140,11 +140,24 @@ struct UntisPlanAnsicht: View {
                     }
                 }
             }
-            ForEach(Array(stunden.filter { $0.datum == tag }.enumerated()), id: \.offset) { _, s in
+            ForEach(zeilen) { z in
+                let hier = z.pause ? [] : Untis.in_(stunden, datum: tag, zeile: z)
+                if z.pause {
+                    Label(z.name, systemImage: "cup.and.saucer").font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                } else if hier.isEmpty {
+                    HStack(spacing: 14) {
+                        Text("\(zeitText(z)) · \(Zeit.hhmm(z.von))").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                        Text("frei").font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4])).foregroundStyle(.secondary.opacity(0.35)))
+                }
+                ForEach(Array(hier.enumerated()), id: \.offset) { _, s in
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(Zeit.hhmm(s.von)).font(.headline.monospacedDigit())
-                        Text(Zeit.hhmm(s.bis)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(zeitText(z)).font(.headline)
+                        Text(Zeit.hhmm(s.von)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     .frame(width: 56, alignment: .trailing)
                     RoundedRectangle(cornerRadius: 2).fill(s.entfaellt ? Color.gray : s.code == "irregular" ? Color.orange : kern.farbton.akzent).frame(width: 4)
@@ -160,31 +173,60 @@ struct UntisPlanAnsicht: View {
                 }
                 .padding(14)
                 .glas(20)
+                }
             }
         }
     }
 
-    /// Woche als Raster: Spalten = Tage, je Stunde ein Kästchen
+    /// Zeilen des Rasters (wie DammTable: 0. Stunde 8:00–8:30, dann die Schulzeiten), von der ersten bis zur letzten belegten Stunde
+    private var zeilen: [Schulzeit] { Untis.zeilen(stunden, zeiten: kern.einstellungen.schulzeiten) }
+
+    private func farbe(_ s: UntisStunde) -> Color { s.entfaellt ? .gray : s.code == "irregular" ? .orange : kern.farbton.akzent }
+
+    private func zeitText(_ z: Schulzeit) -> String { z.name == "0" ? "0." : z.pause ? "" : "\(z.name)." }
+
+    /// Freie Stunde: gestrichelt und blass, damit sofort sichtbar ist, wann jemand nicht da ist
+    private func frei(_ hoehe: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 10).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3])).foregroundStyle(.secondary.opacity(0.35))
+            .frame(maxWidth: .infinity, minHeight: hoehe).overlay { Text("frei").font(.system(size: 10)).foregroundStyle(.secondary.opacity(0.6)) }
+    }
+
+    /// Woche als Raster: Zeilen = Stunden (0., 1., 2., Pause …), Spalten = Tage – jede Stunde steht in ihrer Zeile, freie bleiben frei
     private var wochenAnsicht: some View {
-        HStack(alignment: .top, spacing: 6) {
-            ForEach(tage, id: \.self) { d in
-                let liste = stunden.filter { $0.datum == Zeit.iso(d) }
-                VStack(spacing: 6) {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Color.clear.frame(width: 38, height: 1)
+                ForEach(tage, id: \.self) { d in
                     Text(d.formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.abbreviated).day())).font(.caption.weight(.bold))
-                        .foregroundStyle(Zeit.iso(d) == Zeit.iso(Date()) ? kern.farbton.akzent : .primary)
-                    ForEach(Array(liste.enumerated()), id: \.offset) { _, s in
-                        VStack(spacing: 2) {
-                            Text(Zeit.hhmm(s.von)).font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
-                            Text(s.fach).font(.caption.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7).strikethrough(s.entfaellt)
-                            Text(unterzeile(s)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.7)
-                        }
-                        .padding(6)
-                        .frame(maxWidth: .infinity)
-                        .background((s.entfaellt ? Color.gray : s.code == "irregular" ? Color.orange : kern.farbton.akzent).opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    if liste.isEmpty { Text("–").font(.caption).foregroundStyle(.secondary) }
+                        .foregroundStyle(Zeit.iso(d) == Zeit.iso(Date()) ? kern.farbton.akzent : .primary).frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            ForEach(zeilen) { z in
+                if z.pause {
+                    Text(z.name).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.08), in: Capsule())
+                } else {
+                    HStack(alignment: .top, spacing: 4) {
+                        VStack(spacing: 0) {
+                            Text(zeitText(z)).font(.caption.weight(.bold))
+                            Text(Zeit.hhmm(z.von)).font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                        .frame(width: 38)
+                        ForEach(tage, id: \.self) { d in
+                            let hier = Untis.in_(stunden, datum: Zeit.iso(d), zeile: z)
+                            if hier.isEmpty { frei(54) } else {
+                                VStack(spacing: 2) {
+                                    ForEach(Array(hier.enumerated()), id: \.offset) { _, s in
+                                        Text(s.fach).font(.caption.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7).strikethrough(s.entfaellt)
+                                        Text(unterzeile(s)).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.7)
+                                    }
+                                }
+                                .padding(4).frame(maxWidth: .infinity, minHeight: 54)
+                                .background(farbe(hier[0]).opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                    }
+                }
             }
         }
         .padding(10)

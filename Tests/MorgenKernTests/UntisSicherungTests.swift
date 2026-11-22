@@ -44,3 +44,17 @@ final class UntisSucheTests: XCTestCase {
         XCTAssertEqual(p[0].lehrer, ["Sta"])
     }
 }
+
+final class UntisRasterTests: XCTestCase {
+    func testZeilenVonErsterBisLetzterStunde() {
+        let st = [UntisStunde(datum: "2026-11-23", von: 480, bis: 510, fach: "FF", klassen: [], lehrer: []),   // Mo 0. Stunde
+                  UntisStunde(datum: "2026-11-27", von: 555, bis: 600, fach: "Ma", klassen: [], lehrer: [])]   // Fr 2. Stunde
+        let z = Untis.zeilen(st, zeiten: Schulzeit.standard)
+        XCTAssertEqual(z.first?.name, "0")
+        XCTAssertEqual(z.last?.name, "2")
+        XCTAssertTrue(Untis.in_(st, datum: "2026-11-27", zeile: z[1]).isEmpty)   // Freitag 1. Stunde frei
+        XCTAssertEqual(Untis.in_(st, datum: "2026-11-27", zeile: z[2]).first?.fach, "Ma")
+        // ohne 0. Stunde beginnt das Raster mit der 1. (die 1. Stunde bleibt als freie Zeile stehen)
+        XCTAssertEqual(Untis.zeilen([st[1]], zeiten: Schulzeit.standard).first?.name, "1")
+    }
+}

@@ -81,3 +81,26 @@ public extension Untis {
         return m
     }
 }
+
+public extension Untis {
+    /// Raster wie in DammTable: 0. Stunde 8:00–8:30 (Frühförderung) vor den Schulzeiten
+    static func raster(_ zeiten: [Schulzeit]) -> [Schulzeit] {
+        let ohne = zeiten.filter { $0.name != "0" }
+        return [Schulzeit(name: "0", von: 480, bis: 510)] + ohne
+    }
+
+    /// Die Zeilen, die eine Woche braucht: von der ersten bis zur letzten belegten Stunde (Pausen dazwischen bleiben)
+    static func zeilen(_ stunden: [UntisStunde], zeiten: [Schulzeit]) -> [Schulzeit] {
+        let r = raster(zeiten)
+        let belegt = r.indices.filter { i in !r[i].pause && stunden.contains { $0.von < r[i].bis && $0.bis > r[i].von } }
+        guard let a = belegt.first, let b = belegt.last else { return r.filter { $0.name != "0" } }
+        // immer ab der 1. Stunde (Schulbeginn), die 0. Stunde nur, wenn sie in der Woche belegt ist
+        let start = min(a, r.firstIndex { $0.name == "1" } ?? a)
+        return Array(r[start...max(b, start)])
+    }
+
+    /// Stunden an [datum], die in die Zeile [z] fallen (Doppelstunden in beiden Zeilen)
+    static func in_(_ stunden: [UntisStunde], datum: String, zeile z: Schulzeit) -> [UntisStunde] {
+        stunden.filter { $0.datum == datum && $0.von < z.bis && $0.bis > z.von }
+    }
+}
