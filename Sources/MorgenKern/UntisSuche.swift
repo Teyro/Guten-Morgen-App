@@ -105,3 +105,23 @@ public extension Untis {
         stunden.filter { $0.datum == datum && $0.von < z.bis && $0.bis > z.von }
     }
 }
+
+/// Fachfarben wie auf den Fach-Karten in DammTable: Deutsch rot, Mathe blau, Sachunterricht grün …
+public enum Fachfarbe {
+    /// „#rrggbb“ oder nil (dann die Akzentfarbe)
+    public static func hex(_ fach: String, _ lang: String = "") -> String? {
+        let t = (fach + " " + lang).lowercased()
+        func hat(_ w: String...) -> Bool { w.contains { t.contains($0) } }
+        let k = fach.lowercased().filter(\.isLetter)
+        if ["d", "dv", "dz", "de", "deu"].contains(k) || hat("deutsch", "daz", "lesen", "schreib") { return "#E53935" }
+        if ["m", "ma", "mat"].contains(k) || hat("mathe") { return "#1E88E5" }
+        if ["su", "sach"].contains(k) || hat("sachunterricht", "sachkunde") { return "#43A047" }
+        if ["e", "en", "eng"].contains(k) || hat("englisch") { return "#FB8C00" }
+        if ["mu"].contains(k) || hat("musik") { return "#8E24AA" }
+        if ["sp", "spa", "schw"].contains(k) || hat("sport", "schwimm", "turn") { return "#00ACC1" }
+        if ["bku", "ku", "kunst"].contains(k) || hat("kunst") { return "#D81B60" }
+        if ["rel", "re", "phil"].contains(k) || hat("religion", "philosoph") { return "#8D6E63" }
+        if hat("förder", "foerder", "fö") { return "#00897B" }
+        return nil
+    }
+}

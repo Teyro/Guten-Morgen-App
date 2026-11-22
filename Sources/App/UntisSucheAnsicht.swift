@@ -194,7 +194,7 @@ struct UntisPlanAnsicht: View {
                         Text(Zeit.hhmm(s.von)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     .frame(width: 56, alignment: .trailing)
-                    RoundedRectangle(cornerRadius: 2).fill(s.entfaellt ? Color.gray : s.code == "irregular" ? Color.orange : kern.farbton.akzent).frame(width: 4)
+                    RoundedRectangle(cornerRadius: 2).fill(farbe(s)).frame(width: 6)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(s.fachLang.isEmpty ? s.fach : s.fachLang).font(.title3.weight(.semibold)).strikethrough(s.entfaellt)
@@ -206,7 +206,9 @@ struct UntisPlanAnsicht: View {
                     Spacer(minLength: 0)
                 }
                 .padding(14)
-                .glas(20)
+                .glas(20, farbe: farbe(s).opacity(0.6))
+                .opacity(vorbei(s) ? 0.4 : 1)
+                .saturation(vorbei(s) ? 0 : 1)
                 }
             }
         }
@@ -215,7 +217,18 @@ struct UntisPlanAnsicht: View {
     /// Zeilen des Rasters (wie DammTable: 0. Stunde 8:00–8:30, dann die Schulzeiten), von der ersten bis zur letzten belegten Stunde
     private var zeilen: [Schulzeit] { Untis.zeilen(stunden, zeiten: kern.einstellungen.schulzeiten) }
 
-    private func farbe(_ s: UntisStunde) -> Color { s.entfaellt ? .gray : s.code == "irregular" ? .orange : kern.farbton.akzent }
+    /// Fachfarbe wie in DammTable (Deutsch rot, Mathe blau, Sachunterricht grün …); Ausfall grau, Vertretung orange
+    private func farbe(_ s: UntisStunde) -> Color {
+        if s.entfaellt { return .gray }
+        if s.code == "irregular" { return .orange }
+        return Fachfarbe.hex(s.fach, s.fachLang).map(FarbWahl.farbe) ?? kern.farbton.akzent
+    }
+    /// Heute schon vorbei? Dann ausgegraut – wie bei den Kindern im Tagesplan
+    private func vorbei(_ s: UntisStunde) -> Bool {
+        guard s.datum == Zeit.iso(Date()) else { return s.datum < Zeit.iso(Date()) }
+        let k = Zeit.kalender.dateComponents([.hour, .minute], from: Date())
+        return (k.hour ?? 0) * 60 + (k.minute ?? 0) >= s.bis
+    }
 
     private func zeitText(_ z: Schulzeit) -> String { z.name == "0" ? "0." : z.pause ? "" : "\(z.name)." }
 
@@ -256,7 +269,10 @@ struct UntisPlanAnsicht: View {
                                     }
                                 }
                                 .padding(4).frame(maxWidth: .infinity, minHeight: 54)
-                                .background(farbe(hier[0]).opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                                .background(farbe(hier[0]).opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(farbe(hier[0]).opacity(0.7), lineWidth: 1.5))
+                                .opacity(hier.allSatisfy(vorbei) ? 0.4 : 1)
+                                .saturation(hier.allSatisfy(vorbei) ? 0 : 1)
                             }
                         }
                     }

@@ -93,3 +93,12 @@ final class AufsichtenTests: XCTestCase {
         XCTAssertEqual(p.pausen.first?.ort, "Mensa + Haltestelle")
     }
 }
+
+final class FachfarbeTests: XCTestCase {
+    func testFarben() {
+        XCTAssertEqual(Fachfarbe.hex("D"), "#E53935")
+        XCTAssertEqual(Fachfarbe.hex("Ma", "Mathe"), "#1E88E5")
+        XCTAssertEqual(Fachfarbe.hex("Sach"), "#43A047")
+        XCTAssertNil(Fachfarbe.hex("XYZ"))
+    }
+}
