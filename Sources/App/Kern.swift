@@ -229,7 +229,7 @@ final class Kern {
         if e.untisUebernehmen {
             // Rangfolge: von Hand Eingetragenes bleibt, Untis füllt freie Stunden und pflegt nur seine eigenen Einträge
             let neu = Untis.unterricht(st, zeiten: e.schulzeiten)
-            let vorher = (UserDefaults.standard.data(forKey: "untisUnterricht")).flatMap { try? JSONDecoder().decode([Unterricht].self, from: $0) } ?? einstellungen.unterricht
+            let vorher = (UserDefaults.standard.data(forKey: "untisUnterricht")).flatMap { try? JSONDecoder().decode([Unterricht].self, from: $0) } ?? []
             let zusammen = Untis.zusammenfuehren(hand: einstellungen.unterricht, untis: neu, vorher: vorher)
             if !neu.isEmpty && zusammen != einstellungen.unterricht { einstellungen.unterricht = zusammen }
             UserDefaults.standard.set(try? JSONEncoder().encode(neu), forKey: "untisUnterricht")
