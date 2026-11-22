@@ -25,6 +25,14 @@ final class Kern {
     /// Passwort der Freigabe „Schul-Ordner“ – für die Untis-Sicherung, wenn WebUntis ausfällt
     var schulOrdnerPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(schulOrdnerPasswort, "schulOrdner") } } }
     var untis: UntisStand? { didSet { merke(untis, "untisStand") } }
+    /// Stundenpläne anderer: Favoriten (Herz), gefundene Klassen/Lehrkräfte/Räume, offene Sitzung bzw. die Sicherung als Rückfall
+    var untisFavoriten: [UntisElement] = Kern.gemerkt("untisFavoriten") ?? [] { didSet { merke(untisFavoriten, "untisFavoriten") } }
+    var untisElemente: [UntisElement] = []
+    /// Farben der Personen (Board „Medien“ in Edupool) für die Blasen im Störungsverlauf
+    var personenFarben: [String: String] = Kern.gemerkt("personenFarben") ?? [:] { didSet { merke(personenFarben, "personenFarben") } }
+    var untisSucheHinweis = ""
+    @ObservationIgnored private var untisSuche: Untis.Suche?
+    @ObservationIgnored private var sicherungDaten: Data?
     var untisFehler = ""
     var postStand: PostStand? { didSet { merke(postStand, "postStand") } }
     var postFehler = ""
@@ -226,6 +234,52 @@ final class Kern {
             if !neu.isEmpty && zusammen != einstellungen.unterricht { einstellungen.unterricht = zusammen }
             UserDefaults.standard.set(try? JSONEncoder().encode(neu), forKey: "untisUnterricht")
         }
+    }
+
+    // MARK: Stundenpläne anderer
+
+    /// Eigener Plan als Element (über das Kürzel)
+    var ichAlsElement: UntisElement? {
+        let k = einstellungen.kuerzel.isEmpty ? einstellungen.untisBenutzer : einstellungen.kuerzel
+        return k.isEmpty ? nil : UntisElement(typ: 2, name: k, lang: "Mein Stundenplan")
+    }
+
+    func favorit(_ e: UntisElement) -> Bool { untisFavoriten.contains { $0.id == e.id } }
+    func favoritUmschalten(_ e: UntisElement) {
+        if favorit(e) { untisFavoriten.removeAll { $0.id == e.id } } else { untisFavoriten.append(e) }
+    }
+
+    /// Liste aller Klassen, Lehrkräfte und Räume: aus WebUntis, sonst aus der Untis-Sicherung
+    func untisSucheVorbereiten() async {
+        guard untisElemente.isEmpty, !vorschau else { return }
+        let e = einstellungen
+        do {
+            let s = try await Untis.Suche.oeffnen(link: e.untisLink, schule: e.untisSchule, benutzer: e.untisBenutzer, passwort: untisPasswort,
+                                                  schluessel: untisSchluessel.replacingOccurrences(of: " ", with: "").uppercased())
+            untisSuche = s; untisElemente = s.elemente; untisSucheHinweis = ""
+        } catch {
+            if let d = await sicherung() {
+                untisElemente = Untis.elemente(sicherung: d)
+                untisSucheHinweis = "WebUntis nicht erreichbar – Pläne aus der Untis-Sicherung (nur diese und nächste Woche, keine Räume)."
+            } else { untisSucheHinweis = error.localizedDescription }
+        }
+    }
+
+    private func sicherung() async -> Data? {
+        if let d = sicherungDaten { return d }
+        guard !schulOrdnerPasswort.isEmpty, let d = try? await Untis.sicherungLaden(passwort: schulOrdnerPasswort) else { return nil }
+        sicherungDaten = d
+        return d
+    }
+
+    /// Plan eines Elements für die Woche ab [montag]
+    func plan(_ e: UntisElement, montag: Date) async throws -> [UntisStunde] {
+        if let s = untisSuche, let p = try? await s.plan(e, montag: montag) { return p }
+        if untisSuche == nil { await untisSucheVorbereiten() }
+        if let s = untisSuche { return try await s.plan(e, montag: montag) }
+        guard let d = await sicherung() else { throw Untis.Fehler.text(untisSucheHinweis.isEmpty ? "WebUntis nicht erreichbar." : untisSucheHinweis) }
+        let bis = Zeit.iso(Zeit.kalender.date(byAdding: .day, value: 4, to: montag) ?? montag)
+        return Untis.plan(sicherung: d, element: e).filter { $0.datum >= Zeit.iso(montag) && $0.datum <= bis }
     }
 
     /// Post und Pakete (Integration „Briefankündigung“)
@@ -473,6 +527,8 @@ final class Kern {
             do {
                 aufgaben = try await Aufgaben.laden(token: edupoolToken, farbe: e.aufgabenFarbe)
                 aufgabenFehler = ""
+                let pf = await Aufgaben.personenFarben(token: edupoolToken)
+                if !pf.isEmpty && pf != personenFarben { personenFarben = pf }
                 d.set(Date().timeIntervalSince1970, forKey: "aufgabenGeladen")
             } catch { aufgabenFehler = error.localizedDescription }
         }
@@ -605,6 +661,6 @@ func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T
 
 /// Bereiche, die das Widget direkt öffnet
 enum Bereich: String, Identifiable, Hashable {
-    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan, personal
+    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan, personal, untis
     var id: String { rawValue }
 }

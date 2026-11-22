@@ -222,21 +222,33 @@ struct StoerungDetail: View {
         .task { await laden() }
     }
 
-    /// Bearbeiter (Technik) rechts und blau, alle anderen links und grau – wie in Nachrichten
+    /// Jeder Kommentar eine Blase wie im Chat: Bearbeiter (Technik) rechts, alle anderen links. Farbe je Person aus dem
+    /// Edupool-Board „Medien“, sonst eine feste Farbe aus dem Namen; dazu ein Kreis mit den Initialen.
     private func blase(_ e: StoerungVerlauf.Eintrag) -> some View {
         let technik = !m.bearbeiter.isEmpty && !e.autor.isEmpty && (e.autor.localizedCaseInsensitiveContains(m.bearbeiter) || m.bearbeiter.localizedCaseInsensitiveContains(e.autor))
-        return HStack {
-            if technik { Spacer(minLength: 40) }
+        let farbe = Aufgaben.farbe(fuer: e.autor, in: kern.personenFarben).map(FarbWahl.farbe) ?? Self.namensFarbe(e.autor)
+        let initialen = e.autor.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
+        let kreis = Text(initialen.isEmpty ? "?" : initialen).font(.caption2.weight(.bold)).foregroundStyle(.white)
+            .frame(width: 30, height: 30).background(farbe.gradient, in: Circle())
+        return HStack(alignment: .bottom, spacing: 8) {
+            if technik { Spacer(minLength: 36) } else { kreis }
             VStack(alignment: .leading, spacing: 4) {
                 if !e.autor.isEmpty || !e.zeit.isEmpty {
-                    Text([e.autor, e.zeit].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(technik ? Color.blue : Color.secondary)
+                    Text([e.autor, e.zeit].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(farbe)
                 }
                 Text(e.text).font(.callout).textSelection(.enabled)
             }
-            .padding(12)
-            .background(technik ? Color.blue.opacity(0.14) : Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            if !technik { Spacer(minLength: 40) }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(farbe.opacity(0.16), in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: technik ? 18 : 4, bottomTrailingRadius: technik ? 4 : 18, topTrailingRadius: 18, style: .continuous))
+            if technik { kreis } else { Spacer(minLength: 36) }
         }
+    }
+
+    /// Feste Farbe aus dem Namen (gleicher Name = gleiche Farbe)
+    static func namensFarbe(_ name: String) -> Color {
+        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown, .mint, .cyan]
+        let h = name.lowercased().unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
+        return palette[Int(h % UInt32(palette.count))]
     }
 
     private func abschnitt<I: View>(_ titel: String, _ symbol: String, @ViewBuilder inhalt: () -> I) -> some View {

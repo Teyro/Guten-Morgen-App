@@ -28,3 +28,19 @@ final class UntisSicherungTests: XCTestCase {
         XCTAssertEqual(z.count, 3)
     }
 }
+
+final class UntisSucheTests: XCTestCase {
+    func testElementeUndPlanAusSicherung() {
+        let json = """
+        {"faecher":[{"name":"Ma","lang":"Mathe"}],"klassen":[{"name":"2b","lang":""}],"lehrer":[{"name":"Sta","lang":"Anna Stark"}],
+         "plaene":{"klassen":{"2b":[{"datum":"2026-11-23","von":"08:30","bis":"09:15","faecher":["Ma"],"lehrer":["Sta"],"raeume":["R1"],"klassen":["2b"]}]},"lehrer":{}}}
+        """
+        let d = Data(json.utf8)
+        let e = Untis.elemente(sicherung: d)
+        XCTAssertEqual(e.map(\.titel), ["2b", "Sta – Anna Stark"])
+        let p = Untis.plan(sicherung: d, element: e[0])
+        XCTAssertEqual(p.count, 1)
+        XCTAssertEqual(p[0].fachLang, "Mathe")
+        XCTAssertEqual(p[0].lehrer, ["Sta"])
+    }
+}

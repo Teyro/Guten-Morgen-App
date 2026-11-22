@@ -28,7 +28,9 @@ public struct AufgabenStand: Codable, Hashable, Sendable {
     public var aufgaben: [Aufgabe]
     public var boards: Int
     public var stand: Date
-    public init(aufgaben: [Aufgabe], boards: Int, stand: Date = Date()) { self.aufgaben = aufgaben; self.boards = boards; self.stand = stand }
+    /// Alle Kartenfarben auf den Boards („#rrggbb“) – zur Auswahl in den Einstellungen
+    public var farben: [String]?
+    public init(aufgaben: [Aufgabe], boards: Int, stand: Date = Date(), farben: [String]? = nil) { self.aufgaben = aufgaben; self.boards = boards; self.stand = stand; self.farben = farben }
 
     /// Offene Aufgaben (alles außer „Erledigt“)
     public var offen: [Aufgabe] { aufgaben.filter { !Aufgaben.kategorien[$0.kategorie].erledigt } }
@@ -106,15 +108,19 @@ public enum Aufgaben {
             return ("\(id)", (b["title"] as? String) ?? (b["name"] as? String) ?? "Board \(id)", (b["layout_type"] as? String) ?? "")
         }
         let boards = gewaehlt.isEmpty ? alle.filter { $0.layout == "kanban" } : alle.filter { gewaehlt.contains($0.id) }
+        // leer = keine Farbe gewählt → alle Karten
         let ziel = farbNorm(farbe)
         var aufgaben: [Aufgabe] = []
+        var farben = Set<String>()
         for b in boards.prefix(maxBoards) {
             async let sek = anfrage("/api/sections/board/\(b.id)", token: token)
             async let kar = anfrage("/api/cards/board/\(b.id)", token: token)
             var spalten: [String: String] = [:]
             for s in liste((try await sek).0) { if let id = s["id"] { spalten["\(id)"] = (s["title"] as? String) ?? "" } }
             for k in liste((try await kar).0) {
-                guard farbNorm((k["color"] as? String) ?? "") == ziel else { continue }
+                let f = farbNorm((k["color"] as? String) ?? "")
+                if !f.isEmpty { farben.insert("#" + f) }
+                guard ziel.isEmpty || f == ziel else { continue }
                 let spalte = spalten[k["section_id"].map { "\($0)" } ?? ""] ?? ""
                 let kat = kategorie(spalte)
                 guard kat >= 0, let id = k["id"] else { continue }
@@ -126,7 +132,40 @@ public enum Aufgaben {
                                         kommentarAnzahl: Int(zahl(k["visible_comment_count"] ?? k["comment_count"] ?? k["comments_count"]))))
             }
         }
-        return AufgabenStand(aufgaben: aufgaben, boards: boards.count)
+        return AufgabenStand(aufgaben: aufgaben, boards: boards.count, farben: farben.sorted())
+    }
+
+    // MARK: Farben der Personen (Board „Medien“)
+
+    /// Wer welche Farbe hat – aus dem Board „Medien“: Mitglieder mit Farbe, sonst die Farbe der Karten, denen jemand zugewiesen ist.
+    /// Liefert die Schnittstelle dazu nichts, bleibt die Liste leer (dann gelten die Farben aus den Einstellungen).
+    public static func personenFarben(token: String, board titel: String = "Medien") async -> [String: String] {
+        guard let (bd, _) = try? await anfrage("/api/boards", token: token) else { return [:] }
+        guard let b = liste(bd).first(where: { (($0["title"] ?? $0["name"]) as? String)?.localizedCaseInsensitiveContains(titel) == true }), let id = b["id"] else { return [:] }
+        var m: [String: String] = [:]
+        func nimm(_ personen: Any?, farbe: Any? = nil) {
+            for p in personen as? [[String: Any]] ?? [] {
+                let u = (p["user"] as? [String: Any]) ?? p
+                let n = [u["display_name"], u["name"], u["username"]].compactMap { $0 as? String }.first { !$0.isEmpty } ?? ""
+                let f = farbNorm(((p["color"] ?? p["colour"] ?? u["color"]) as? String) ?? (farbe as? String) ?? "")
+                if !n.isEmpty, !f.isEmpty, m[n] == nil { m[n] = "#" + f }
+            }
+        }
+        nimm(b["members"] ?? b["users"])
+        if let (d, _) = try? await anfrage("/api/boards/\(id)", token: token), let o = d as? [String: Any] { nimm(o["members"] ?? o["users"] ?? o["participants"]) }
+        if let (kd, _) = try? await anfrage("/api/cards/board/\(id)", token: token) {
+            for k in liste(kd) { nimm(k["assignees"] ?? k["assigned_users"] ?? k["members"], farbe: k["color"]) }
+        }
+        return m
+    }
+
+    /// Farbe zu einem Namen: exakt, dann Teil des Namens (z. B. Nachname), sonst nil
+    public static func farbe(fuer name: String, in farben: [String: String]) -> String? {
+        let n = name.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return nil }
+        if let f = farben.first(where: { $0.key.lowercased() == n })?.value { return f }
+        let teile = Set(n.split { !$0.isLetter }.map(String.init).filter { $0.count >= 3 })
+        return farben.first { k, _ in !teile.isDisjoint(with: k.lowercased().split { !$0.isLetter }.map(String.init)) }?.value
     }
 
     // MARK: Kommentare (Verlauf einer Karte, antworten braucht beim Verbinden „Schreiben“)

@@ -52,6 +52,7 @@ struct HauptAnsicht: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button { pfad = [.stundenplan] } label: { Label("Stundenplan", systemImage: "calendar.day.timeline.left") }
+                        Button { pfad = [.untis] } label: { Label("Stundenpläne suchen", systemImage: "magnifyingglass") }
                         Button { pfad = [.vertretung] } label: { Label("Vertretung", systemImage: "arrow.triangle.swap") }
                         Button { pfad = [.mensa] } label: { Label("Speiseplan", systemImage: "fork.knife") }
                         Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") }
@@ -72,6 +73,7 @@ struct HauptAnsicht: View {
             .navigationDestination(for: Bereich.self) { b in
                 switch b {
                 case .stundenplan: StundenplanWoche(kern: kern)
+                case .untis: UntisSucheAnsicht(kern: kern)
                 case .post: PostAnsicht(kern: kern)
                 case .mensa: MensaAnsicht(kern: kern)
                 case .abwesend: AbwesendAnsicht(kern: kern)
@@ -741,7 +743,7 @@ struct EinstellungenAnsicht: View {
                     Button("Mit Edupool Boards verbinden") { Task { await kern.edupoolVerbinden { u in Task { @MainActor in SafariSeite.zeigen(u) } } } }
                 } else {
                     Toggle("Aufgaben zeigen", isOn: $k.einstellungen.aufgaben)
-                    TextField("Kartenfarbe deiner Aufgaben", text: $k.einstellungen.aufgabenFarbe).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    FarbWahl(farbe: $k.einstellungen.aufgabenFarbe, farben: kern.aufgaben?.farben ?? [])
                     Button("Neu verbinden") { Task { await kern.edupoolVerbinden { u in Task { @MainActor in SafariSeite.zeigen(u) } } } }
                     Button("Verbindung trennen", role: .destructive) { k.edupoolToken = ""; k.aufgaben = nil; k.einstellungen.aufgaben = false }
                 }
@@ -979,5 +981,42 @@ enum SafariSeite {
         let s = SFSafariViewController(url: url)
         s.modalPresentationStyle = .pageSheet
         oben.present(s, animated: true)
+    }
+}
+
+
+/// Kartenfarbe für Edupool: „Alle“ (keine Farbe = jede Karte) oder eine der Farben auf den Boards, dazu frei als #rrggbb
+struct FarbWahl: View {
+    @Binding var farbe: String
+    let farben: [String]
+    static func farbe(_ hex: String) -> Color {
+        let h = Aufgaben.farbNorm(hex)
+        guard let v = UInt32(h, radix: 16) else { return .gray }
+        return Color(red: Double(v >> 16 & 0xff) / 255, green: Double(v >> 8 & 0xff) / 255, blue: Double(v & 0xff) / 255)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Welche Karten gehören dir?").font(.subheadline)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Button { farbe = "" } label: {
+                        Text("Alle").font(.caption.weight(.semibold)).padding(.horizontal, 10).frame(height: 34)
+                            .background(Capsule().strokeBorder(farbe.isEmpty ? Color.accentColor : Color.secondary.opacity(0.4), lineWidth: farbe.isEmpty ? 3 : 1))
+                    }
+                    ForEach(Array(Set(farben + (farbe.isEmpty ? [] : [farbe]))).sorted(), id: \.self) { f in
+                        let an = Aufgaben.farbNorm(f) == Aufgaben.farbNorm(farbe)
+                        Button { farbe = f } label: {
+                            Circle().fill(Self.farbe(f)).frame(width: 34, height: 34)
+                                .overlay(Circle().strokeBorder(Color.primary.opacity(an ? 0.9 : 0.15), lineWidth: an ? 3 : 1))
+                                .overlay { if an { Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white) } }
+                        }
+                        .accessibilityLabel("Farbe \(f)")
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 2)
+            }
+            TextField("oder Farbe als #rrggbb (leer = alle Karten)", text: $farbe).textInputAutocapitalization(.never).autocorrectionDisabled().font(.footnote)
+        }
     }
 }
