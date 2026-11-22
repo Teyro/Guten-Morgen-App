@@ -22,6 +22,8 @@ final class Kern {
     var untisPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(untisPasswort, "untis") } } }
     /// Schlüssel aus dem QR-Code „Untis Mobile“ (für Konten mit zweitem Faktor)
     var untisSchluessel: String { didSet { if !vorschau { Schluesselbund.speichern(untisSchluessel, "untisSchluessel") } } }
+    /// Passwort der Freigabe „Schul-Ordner“ – für die Untis-Sicherung, wenn WebUntis ausfällt
+    var schulOrdnerPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(schulOrdnerPasswort, "schulOrdner") } } }
     var untis: UntisStand? { didSet { merke(untis, "untisStand") } }
     var untisFehler = ""
     var postStand: PostStand? { didSet { merke(postStand, "postStand") } }
@@ -101,7 +103,7 @@ final class Kern {
             token = ""
             mensaPasswort = ""
             freigabePasswort = ""
-            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""; untisPasswort = ""; untisSchluessel = ""
+            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""; untisPasswort = ""; untisSchluessel = ""; schulOrdnerPasswort = ""
             vorschauDaten()
             return
         }
@@ -114,6 +116,7 @@ final class Kern {
         edupoolToken = Schluesselbund.lesen("edupool") ?? ""
         untisPasswort = Schluesselbund.lesen("untis") ?? ""
         untisSchluessel = Schluesselbund.lesen("untisSchluessel") ?? ""
+        schulOrdnerPasswort = Schluesselbund.lesen("schulOrdner") ?? ""
         untis = Kern.gemerkt("untisStand")
         postStand = Kern.gemerkt("postStand")
         abwesend = Kern.gemerkt("abwesendStand")
@@ -199,16 +202,30 @@ final class Kern {
         guard e.untisAn, !e.untisLink.isEmpty, !untisPasswort.isEmpty || !untisSchluessel.isEmpty || Untis.qr(e.untisLink) != nil else { return }
         let d = UserDefaults.standard
         guard erzwingen || Date().timeIntervalSince1970 - d.double(forKey: "untisGeladen") > 6 * 3600 else { return }
+        let kuerzel = e.kuerzel.isEmpty ? e.untisBenutzer : e.kuerzel
+        var st: UntisStand?
         do {
-            let st = try await Untis.laden(link: e.untisLink, schule: e.untisSchule, benutzer: e.untisBenutzer, passwort: untisPasswort,
-                                           schluessel: untisSchluessel.replacingOccurrences(of: " ", with: "").uppercased(), kuerzel: e.kuerzel.isEmpty ? e.untisBenutzer : e.kuerzel)
-            untis = st; untisFehler = ""
-            d.set(Date().timeIntervalSince1970, forKey: "untisGeladen")
-            if e.untisUebernehmen {
-                let neu = Untis.unterricht(st, zeiten: e.schulzeiten)
-                if !neu.isEmpty && neu != einstellungen.unterricht { einstellungen.unterricht = neu }
-            }
-        } catch { untisFehler = error.localizedDescription }
+            st = try await Untis.laden(link: e.untisLink, schule: e.untisSchule, benutzer: e.untisBenutzer, passwort: untisPasswort,
+                                       schluessel: untisSchluessel.replacingOccurrences(of: " ", with: "").uppercased(), kuerzel: kuerzel)
+            untisFehler = ""
+        } catch {
+            // WebUntis fällt aus: die tägliche Untis-Sicherung aus dem Schul-Ordner
+            if !schulOrdnerPasswort.isEmpty, let daten = try? await Untis.sicherungLaden(passwort: schulOrdnerPasswort), let s = Untis.ausSicherung(daten, kuerzel: kuerzel) {
+                st = s
+                untisFehler = "WebUntis nicht erreichbar – Stand aus der Untis-Sicherung vom \(s.stand.formatted(.dateTime.day().month(.twoDigits).hour().minute()))."
+            } else { untisFehler = error.localizedDescription }
+        }
+        guard let st else { return }
+        untis = st
+        d.set(Date().timeIntervalSince1970, forKey: "untisGeladen")
+        if e.untisUebernehmen {
+            // Rangfolge: von Hand Eingetragenes bleibt, Untis füllt freie Stunden und pflegt nur seine eigenen Einträge
+            let neu = Untis.unterricht(st, zeiten: e.schulzeiten)
+            let vorher = (UserDefaults.standard.data(forKey: "untisUnterricht")).flatMap { try? JSONDecoder().decode([Unterricht].self, from: $0) } ?? einstellungen.unterricht
+            let zusammen = Untis.zusammenfuehren(hand: einstellungen.unterricht, untis: neu, vorher: vorher)
+            if !neu.isEmpty && zusammen != einstellungen.unterricht { einstellungen.unterricht = zusammen }
+            UserDefaults.standard.set(try? JSONEncoder().encode(neu), forKey: "untisUnterricht")
+        }
     }
 
     /// Post und Pakete (Integration „Briefankündigung“)

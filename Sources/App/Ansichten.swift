@@ -668,10 +668,11 @@ struct EinstellungenAnsicht: View {
                     LabeledContent("Schlüssel") { SecureField("aus „Untis Mobile“", text: $k.untisSchluessel).multilineTextAlignment(.trailing).textInputAutocapitalization(.characters).autocorrectionDisabled() }
                     SecureField("Passwort (nur ohne zweiten Faktor)", text: $k.untisPasswort)
                     Toggle("Als „Mein Stundenplan“ übernehmen", isOn: $k.einstellungen.untisUebernehmen)
+                    SecureField("Schul-Ordner-Passwort (Untis-Sicherung)", text: $k.schulOrdnerPasswort)
                     Button("Jetzt laden") { Task { await kern.untisLaden(erzwingen: true); kern.meldung = kern.untisFehler.isEmpty ? "Stundenplan aus WebUntis geladen" : kern.untisFehler } }
                     if !kern.untisFehler.isEmpty { Text(kern.untisFehler).font(.footnote).foregroundStyle(.orange) }
                 }
-            } header: { Text("WebUntis") } footer: { Text("In WebUntis auf deinen Namen → Freigaben → „Zugriff über Untis Mobile“ → Anzeigen. Unter dem QR-Code stehen Url, Schule, Benutzer und Schlüssel – hier abtippen (oder den QR-Code von einem anderen Bildschirm scannen). Damit meldet sich die App wie die Untis-App an, auch mit zweitem Faktor, und braucht dein Passwort nicht. Geladen werden deine Stunden und die Pläne deiner Klassen.") }
+            } header: { Text("WebUntis") } footer: { Text("In WebUntis auf deinen Namen → Freigaben → „Zugriff über Untis Mobile“ → Anzeigen. Unter dem QR-Code stehen Url, Schule, Benutzer und Schlüssel – hier abtippen (oder den QR-Code von einem anderen Bildschirm scannen). Damit meldet sich die App wie die Untis-App an, auch mit zweitem Faktor, und braucht dein Passwort nicht. Geladen werden deine Stunden und die Pläne deiner Klassen. Von Hand Eingetragenes in „Mein Stundenplan“ bleibt – Untis füllt nur freie Stunden. Fällt WebUntis aus, nimmt die App die tägliche Untis-Sicherung aus dem Schul-Ordner (dafür das Passwort des Schul-Ordners eintragen).") }
             .sheet(isPresented: $scannen) {
                 QRScanner { text in
                     scannen = false
