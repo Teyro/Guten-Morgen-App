@@ -34,6 +34,8 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var belegt = 0
     /// Bemerkungen aus der „Wichtig“-Zeile für das eigene Kürzel (Begleitung, Termin …) – optional: alte Speicherstände
     public var bemerkungen: [Bemerkung]? = nil
+    /** Aufsichten aller Lehrkräfte aus den Pausenzeilen: Kürzel (klein) → Pausen – für die Pläne der anderen */
+    public var alleAufsichten: [String: [Pause]]? = nil
     public init() {}
 
     /// „2. Stunde 2c in Haus 1, 2. Pause Aufsicht Mensa.“ – [haeuser]: Haus → Klassen
@@ -308,8 +310,21 @@ public enum Vertretung {
             if !pausen.isEmpty { pausenSpalten = pausen; continue }
             // Ab der Pausen-Rubrik keine Stunden mehr (auch nicht für „belegt“)
             if let sp = pausenSpalten {
-                guard !k.isEmpty else { continue }
                 let ort = z.filter { $0.bis <= sp[0].von + 5 && !$0.text.isEmpty }.last?.text ?? ""
+                // alle Kürzel dieser Zeile merken (für die Stundenpläne der anderen)
+                for s in sp {
+                    guard let c = z.first(where: { $0.mitte >= Double(s.von) && $0.mitte < Double(s.bis) }), !c.text.isEmpty else { continue }
+                    let name = s.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                    for teil in c.text.components(separatedBy: CharacterSet(charactersIn: ",;/+ ")) {
+                        let reserve = teil.contains("(")
+                        let kz = teil.trimmingCharacters(in: CharacterSet.letters.inverted)
+                        guard kz.count >= 2, kz.count <= 5, kz.allSatisfy(\.isLetter) else { continue }
+                        var a = p.alleAufsichten ?? [:]
+                        a[kz.lowercased(), default: []].append(.init(pause: name, ort: ort, reserve: reserve))
+                        p.alleAufsichten = a
+                    }
+                }
+                guard !k.isEmpty else { continue }
                 for s in sp {
                     if let c = z.first(where: { $0.mitte >= Double(s.von) && $0.mitte < Double(s.bis) }), hat(c.text, k) {
                         let name = s.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)

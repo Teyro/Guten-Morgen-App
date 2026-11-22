@@ -88,9 +88,11 @@ struct UntisPlanAnsicht: View {
         return p.stunden.filter { $0.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) == z.name }.map { "Vertretung \($0.klasse)" }
             + (p.bemerkungen ?? []).filter { $0.stunden.contains(nr) }.map { "📌 " + $0.titel }
     }
+    /// Aufsicht in der Pause (aus dem Vertretungsplan des Tages): eigene – oder die der Lehrkraft, deren Plan das ist
     private func pausenText(_ datum: String, _ z: Schulzeit) -> String? {
-        guard let p = plan(datum), z.pause else { return nil }
-        return p.pausen.first { $0.pause.lowercased().hasPrefix(z.name.lowercased().prefix(2)) }.map { "Aufsicht \($0.ort)" + ($0.reserve ? " (Reserve)" : "") }
+        guard vertretungen, z.pause, let p = kern.vertretung, p.datum == datum else { return nil }
+        let liste: [VertretungsPlan.Pause] = istIch ? p.pausen : element.typ == 2 ? (p.alleAufsichten?[element.name.lowercased()] ?? []) : []
+        return liste.first { $0.pause.lowercased().hasPrefix(z.name.lowercased().prefix(2)) }.map { "Aufsicht \($0.ort)" + ($0.reserve ? " (Reserve)" : "") }
     }
     @State private var fehler = ""
     @State private var laedt = false

@@ -76,3 +76,20 @@ final class BemerkungenTests: XCTestCase {
         XCTAssertTrue(VertretungsPlan.bemerkungen(absaetze, kuerzel: "Nix").isEmpty)
     }
 }
+
+
+final class AufsichtenTests: XCTestCase {
+    func testAlleAufsichtenAusDenPausenzeilen() {
+        func tc(_ t: String, _ w: Int = 1000) -> String { "<w:tc><w:tcPr><w:tcW w:w=\"\(w)\"/></w:tcPr><w:p><w:r><w:t>\(t)</w:t></w:r></w:p></w:tc>" }
+        func tr(_ z: String...) -> String { "<w:tr>" + z.joined() + "</w:tr>" }
+        let xml = "<w:document><w:body><w:p><w:r><w:t>Freitag, 27.11.2026</w:t></w:r></w:p><w:tbl>"
+            + tr(tc("Klasse"), tc("4a"), tc("4b")) + tr(tc("1"), tc("Xyz"), tc(""))
+            + tr(tc(""), tc("Wichtig!"), tc("1. Pause"), tc("2. Pause"))
+            + tr(tc(""), tc("Mensa + Haltestelle"), tc("Abc"), tc("Xyz+4"))
+            + tr(tc(""), tc("Fußballplatz"), tc("(Def)"), tc("Abc")) + "</w:tbl></w:body></w:document>"
+        let p = Vertretung.auswerten(xml, kuerzel: "Xyz")
+        XCTAssertEqual(p.alleAufsichten?["abc"]?.map(\.ort), ["Mensa + Haltestelle", "Fußballplatz"])
+        XCTAssertEqual(p.alleAufsichten?["def"]?.first?.reserve, true)
+        XCTAssertEqual(p.pausen.first?.ort, "Mensa + Haltestelle")
+    }
+}
