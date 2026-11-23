@@ -14,7 +14,7 @@ struct Farbton: Identifiable, Hashable {
     var systemGrund: Bool = false
 
     static let alle: [Farbton] = [
-        Farbton(id: "system", name: "System (wie Apple)",
+        Farbton(id: "system", name: "Liquid Glass (wie Apple)",
                 hell: [Color(red: 0.95, green: 0.95, blue: 0.97), Color(red: 0.95, green: 0.95, blue: 0.97)],
                 dunkel: [Color(red: 0.07, green: 0.07, blue: 0.08), Color(red: 0.07, green: 0.07, blue: 0.08)],
                 widget: [Color(red: 0.0, green: 0.3, blue: 0.7), Color(red: 0.1, green: 0.55, blue: 0.95)], akzent: .blue, systemGrund: true),

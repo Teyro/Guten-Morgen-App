@@ -63,7 +63,7 @@ struct StoerungenAnsicht: View {
                     StatusZahl(zahl: arbeit.count, text: "In Arbeit", symbol: "wrench.adjustable.fill", farbe: .blue)
                     StatusZahl(zahl: erledigt.count, text: "Erledigt", symbol: "checkmark.circle.fill", farbe: .green)
                 }
-                .listRowBackground(Color.clear).listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+                .listRowBackground(Color.clear).padding(.vertical, 10).listRowInsets(EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2)).listRowSeparator(.hidden)
                 if !kern.stoerungenFehler.isEmpty {
                     Label(kern.stoerungenFehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
                 }

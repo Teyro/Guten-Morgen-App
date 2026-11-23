@@ -163,7 +163,7 @@ public enum Untis {
             guard let d = Zeit.tag(s.datum) else { continue }
             let wt = Zeit.kalender.component(.weekday, from: d)
             // alle Stunden des Rasters, die in diese Untis-Stunde fallen (Doppelstunden)
-            for z in zeiten where !z.pause && z.von < s.bis && z.bis > s.von {
+            for z in raster(zeiten) where !z.pause && z.von < s.bis && z.bis > s.von {
                 guard !liste.contains(where: { $0.tag == wt && $0.stunde == z.name }) else { continue }
                 liste.append(Unterricht(tag: wt, stunde: z.name, klasse: s.klassen.joined(separator: ", "), fach: s.fachLang.isEmpty ? s.fach : s.fachLang, raum: s.raum))
             }

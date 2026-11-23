@@ -97,6 +97,8 @@ final class Kern {
     var meldung = ""
     var weckerText = ""
     var einstellungenOffen = false
+    /// Einrichtungs-Assistent – beim ersten Start nach 2.10 einmal für alle
+    var assistentOffen = false
 
     @ObservationIgnored let kalender = Kalender()
     @ObservationIgnored let ortung = Ortung()
@@ -119,7 +121,9 @@ final class Kern {
             return
         }
         einstellungen = UserDefaults.standard.string(forKey: "einstellungen").flatMap(MorgenEinstellungen.aus(json:)) ?? MorgenEinstellungen()
-        token = Schluesselbund.lesen("token") ?? ""
+        // 2.10: Widget einmalig auf den Apple-Stil (Liquid Glass) – alte Farbverläufe wirkten fremd; Farbe bleibt wählbar
+        if !UserDefaults.standard.bool(forKey: "widgetGlas") { einstellungen.farbton = "system"; UserDefaults.standard.set(true, forKey: "widgetGlas") }
+        token =Schluesselbund.lesen("token") ?? ""
         mensaPasswort = Schluesselbund.lesen("mensa") ?? ""
         freigabePasswort = Schluesselbund.lesen("freigabe") ?? ""
         iservPasswort = Schluesselbund.lesen("iserv") ?? ""
@@ -133,6 +137,8 @@ final class Kern {
         abwesend = Kern.gemerkt("abwesendStand")
         stoerungen = Kern.gemerkt("stoerungenStand")
         aufgaben = Kern.gemerkt("aufgabenStand")
+        if einstellungen.farbton == "system" { speichern() }
+        assistentOffen = !vorschau && !UserDefaults.standard.bool(forKey: EinrichtungsAssistent.fertigSchluessel)
     }
 
     var ha: HomeAssistant { HomeAssistant(adresse: einstellungen.haAdresse, token: token) }

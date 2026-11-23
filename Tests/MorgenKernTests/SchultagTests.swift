@@ -224,4 +224,37 @@ final class ErsetztTests: XCTestCase {
         XCTAssertEqual(b[3].aufteilung, ["4a", "4b"])
         XCTAssertEqual(e.schultag(mo, vertretung: v).map(\.name), ["3", "4", "2. Pause"])
     }
+
+    /// Montag, 23.11.2026 (echter Plan): Frühbetreuung Mensa +Sta, „Begleitung Nelson 1. FSJ Abdul, 2.Schu, 3.-5. Sta“
+    func testFruehUndBegleitung() {
+        var e = MorgenEinstellungen()
+        e.unterricht = [Unterricht(tag: 2, stunde: "3", klasse: "4a", fach: "Mathe"), Unterricht(tag: 2, stunde: "0", klasse: "VSK", fach: "Frühförderung")]
+        var v = VertretungsPlan(); v.datum = "2026-11-23"
+        v.stunden = [.init(stunde: "Frühbetreuung Mensa", klasse: "")]
+        v.bemerkungen = VertretungsPlan.bemerkungen(["Begleitung Leon 2c: 1. Schu, Mal 2.-4.  FSJ Sophia VSK krank;          FSJ Lola 1b krank;          FSJ Nehir 1c krank;   FSJ Sude 1c Seminar-> Begleitung Roan 1. Mad, 2. Brü, 3. Mey            Begleitung Emir 1a: 3.+4. Bal  FSJ Ellie 2c Seminar-> Begleitung Nelson 1. FSJ Abdul, 2.Schu, 3.-5. Sta  FSJ Elmira krank 1b: SB Meggy 1.-5. Begleitung Emir"], kuerzel: "Sta")
+        XCTAssertEqual(v.bemerkungen?.first?.stunden, [3, 4, 5])
+        let b = e.schultag(tag(2026, 11, 23), vertretung: v, ganz: true)
+        XCTAssertEqual(b.first?.name, "0")
+        XCTAssertEqual(b.first?.text, "Frühbetreuung Mensa")
+        XCTAssertEqual(b.first?.ersetzt, "VSK Frühförderung")
+        XCTAssertEqual(uhr(Stundenplan.beginn(b)!), "08:00")
+        let drei = b.first { $0.name == "3" }!
+        XCTAssertEqual(drei.text, "2c → Nelson"); XCTAssertEqual(drei.ersetzt, "4a Mathe"); XCTAssertEqual(drei.art, .vertretung)
+        XCTAssertEqual(b.first { $0.name == "5" }?.text, "2c → Nelson")
+        XCTAssertEqual(b.first { $0.name == "2" }?.art, .frei)
+        // ohne Früh-Eintrag keine leere 0. Stunde
+        v.stunden = []; e.unterricht.removeLast()
+        XCTAssertEqual(e.schultag(tag(2026, 11, 23), vertretung: v, ganz: true).first?.name, "1")
+    }
+
+    /// Eingebaute Schul-Vorgaben: mit scripts/vorgaben.mjs (Node) verschlüsselt, hier entschlüsselt
+    func testSchulVorgaben() throws {
+        let d = Data("{\"v\":1,\"runden\":300000,\"salz\":\"W6QEfqoNzwvhrr8d1DnPlQ==\",\"daten\":\"Nk6uPoabjllI6YhWmXpG4hTDFOTrk622Nzc8pUjEF7+uZWa1r4ZiRKjGiD5YU0HTUvdpg9mUuJvunAP3sTQZtqgrEMmU3BKxeHFvuw9WzaAaj/sk01p6nL2hEzEvHHVdjfU=\"}".utf8)
+        let v = try SchulVorgaben.entschluesseln(d, code: "test")
+        XCTAssertEqual(v.vertretungLink, "https://x/s/abc"); XCTAssertEqual(v.freigabe, "pw")
+        XCTAssertThrowsError(try SchulVorgaben.entschluesseln(d, code: "falsch"))
+        var e = MorgenEinstellungen(); e.bundesland = "SH"
+        let g = v.anwenden(&e)
+        XCTAssertEqual(e.vertretungLink, "https://x/s/abc"); XCTAssertEqual(e.bundesland, "HH"); XCTAssertEqual(g.freigabe, "pw")
+    }
 }

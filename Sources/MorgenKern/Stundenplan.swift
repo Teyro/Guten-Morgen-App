@@ -68,6 +68,12 @@ public enum Stundenplan {
         Zeit.kalender.date(bySettingHour: minuten / 60, minute: minuten % 60, second: 0, of: tag) ?? tag
     }
 
+    /// Zeile im Vertretungsplan → Name im Raster: „3.“ → „3“, „Frühbetreuung Mensa“ → „0“
+    public static func stunde(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        return Int(t) != nil ? t : t.lowercased().hasPrefix("früh") ? "0" : t
+    }
+
     /// „1. Pause“ ↔ „1. Pause“, „Pause 1“, „1.P“ – die Nummer zählt
     static func pausenNummer(_ s: String) -> Int? {
         guard s.lowercased().contains("p") else { return nil }
@@ -83,7 +89,8 @@ public enum Stundenplan {
         let tag = Zeit.kalender.startOfDay(for: datum)
         let v = vertretung.flatMap { $0.datum == nil || $0.datum == Zeit.iso(datum) ? $0 : nil }
         var bloecke: [Block] = []
-        for z in zeiten.sorted(by: { $0.von < $1.von }) {
+        // 0. Stunde (8:00–8:30, Frühförderung/Frühbetreuung) gehört immer zum Raster
+        for z in Untis.raster(zeiten).sorted(by: { $0.von < $1.von }) {
             let von = zeit(tag, z.von), bis = zeit(tag, z.bis)
             if z.pause {
                 // Mehrere Aufsichten in derselben Pause zusammenfassen
@@ -94,10 +101,10 @@ public enum Stundenplan {
                 } else {
                     bloecke.append(Block(name: z.name, von: von, bis: bis, art: .pause, text: "Pause"))
                 }
-            } else if let s = v?.stunden.first(where: { $0.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) == z.name }) {
+            } else if let s = v?.stunden.first(where: { stunde($0.stunde) == z.name }) {
                 let h = Vertretung.haus(s.klasse, haeuser)
                 let fest = unterricht.first(where: { $0.tag == wt && $0.stunde == z.name })?.text
-                bloecke.append(Block(name: z.name, von: von, bis: bis, art: .vertretung, text: "Vertretung \(s.klasse)" + (h.isEmpty ? "" : " · \(h)"), ersetzt: fest))
+                bloecke.append(Block(name: z.name, von: von, bis: bis, art: .vertretung, text: VertretungsPlan.titel(s) + (h.isEmpty ? "" : " · \(h)"), ersetzt: fest))
             } else if let u = unterricht.first(where: { $0.tag == wt && $0.stunde == z.name }) {
                 if ausfall.contains(where: { $0.lowerBound < z.bis && $0.upperBound > z.von }) {
                     bloecke.append(Block(name: z.name, von: von, bis: bis, art: .frei, text: "Entfall", ersetzt: u.text))
@@ -108,6 +115,18 @@ public enum Stundenplan {
                 bloecke.append(Block(name: z.name, von: von, bis: bis, art: .frei, text: "frei"))
             }
         }
+        // Begleitungen aus der „Wichtig“-Zeile („Begleitung Nelson … 3.-5. Sta“): eigene Stunde durchgestrichen, darunter „2c → Nelson“
+        for bem in v?.bemerkungen ?? [] where bem.was.hasPrefix("Begleitung ") {
+            let wer = String(bem.was.dropFirst("Begleitung ".count))
+            for n in bem.stunden {
+                guard let i = bloecke.firstIndex(where: { $0.name == String(n) }), bloecke[i].art == .unterricht || bloecke[i].art == .frei else { continue }
+                let alt = bloecke[i].art == .unterricht ? bloecke[i].text : bloecke[i].ersetzt
+                bloecke[i] = Block(name: bloecke[i].name, von: bloecke[i].von, bis: bloecke[i].bis, art: .vertretung,
+                                   text: bem.klasse.isEmpty ? bem.was : "\(bem.klasse) → \(wer)", ersetzt: alt)
+            }
+        }
+        // 0. Stunde nur, wenn dort etwas ist
+        if bloecke.first?.name == "0", !bloecke[0].zeigen { bloecke.removeFirst() }
         if let a = v?.aufteilung {
             for i in bloecke.indices where !(a[bloecke[i].name] ?? []).isEmpty { bloecke[i].aufteilung = a[bloecke[i].name] }
         }

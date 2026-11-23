@@ -51,10 +51,15 @@ struct MorgenEintrag: TimelineEntry {
             if v.fehlt { z.append(("⚠️", "Als fehlend eingetragen")) }
             for s in v.stunden {
                 let h = Vertretung.haus(s.klasse, haeuser)
-                z.append((Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(3)), "Vertretung \(s.klasse)" + (h.isEmpty ? "" : " · \(h)")))
+                z.append((Stundenplan.stunde(s.stunde) + ".", VertretungsPlan.titel(s) + (h.isEmpty ? "" : " · \(h)")))
+            }
+            // Begleitungen aus der „Wichtig“-Zeile: „3.–5.  2c → Nelson“
+            for b in v.bemerkungen ?? [] where b.was.hasPrefix("Begleitung ") && !b.stunden.isEmpty {
+                let wer = String(b.was.dropFirst("Begleitung ".count))
+                z.append((b.stunden.count > 1 ? "\(b.stunden.first!)–\(b.stunden.last!)" : "\(b.stunden[0]).", b.klasse.isEmpty ? b.was : "\(b.klasse) → \(wer)"))
             }
             for p in v.pausen { z.append((String(p.pause.prefix(1)) + ".P", (p.reserve ? "Reserve " : "Aufsicht ") + p.ort)) }
-            if v.stunden.isEmpty && v.pausen.isEmpty && !v.fehlt { z.append(("✓", "Keine Vertretung")) }
+            if z.isEmpty { z.append(("✓", "Keine Vertretung")) }
         }
         if obst { z.append(("🍎", "Schulobst")) }
         return z
@@ -213,6 +218,8 @@ struct MorgenWidget: Widget {
 struct MorgenWidgetAnsicht: View {
     let e: MorgenEintrag
     @Environment(\.widgetFamily) private var familie
+    /// Glas-/getönter Home-Bildschirm: iOS nimmt den Hintergrund weg und legt Liquid Glass darunter
+    @Environment(\.widgetRenderingMode) private var darstellung
 
     var weckText: String { e.wecker?.minuten.map(Zeit.hhmm) ?? "frei" }
     var weckTag: String {
@@ -221,7 +228,7 @@ struct MorgenWidgetAnsicht: View {
     }
     var schulTitel: String { "Schule " + e.schulName }
     /// Systemfarben (Schrift dunkel/hell je nach Modus) oder weiße Schrift auf kräftigem Farbton
-    var system: Bool { Farbton.zu(e.farbton).systemGrund }
+    var system: Bool { Farbton.zu(e.farbton).systemGrund || darstellung != .fullColor }
     var schrift: Color { system ? .primary : .white }
     var kastenGrund: AnyShapeStyle { system ? AnyShapeStyle(Color(uiColor: .tertiarySystemFill)) : AnyShapeStyle(Color.white.opacity(0.14)) }
     var markeGrund: AnyShapeStyle { system ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(Color.white.opacity(0.22)) }

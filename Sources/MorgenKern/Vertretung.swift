@@ -38,6 +38,11 @@ public struct VertretungsPlan: Codable, Hashable, Sendable {
     public var alleAufsichten: [String: [Pause]]? = nil
     public init() {}
 
+    /// „Vertretung 2c“ – bei Zeilen ohne Stundennummer („Frühbetreuung Mensa“) deren Titel
+    public static func titel(_ s: Stunde) -> String {
+        Int(s.stunde.trimmingCharacters(in: CharacterSet(charactersIn: ". "))) != nil ? "Vertretung \(s.klasse)" : [s.stunde, s.klasse].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     /// „2. Stunde 2c in Haus 1, 2. Pause Aufsicht Mensa.“ – [haeuser]: Haus → Klassen
     public func satz(haeuser: [String: [String]] = [:]) -> String {
         var t: [String] = []

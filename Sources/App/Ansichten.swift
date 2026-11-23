@@ -47,6 +47,7 @@ struct HauptAnsicht: View {
             .background(Hintergrund(farbton: kern.farbton))
             .tint(kern.farbton.akzent)
             .refreshable { await kern.aktualisieren() }
+            .fullScreenCover(isPresented: $kern.assistentOffen) { EinrichtungsAssistent(kern: kern) }
             .toolbar {
                 // Menü (drei Striche): alle Bereiche als eigene Seiten
                 ToolbarItem(placement: .topBarLeading) {
@@ -510,6 +511,12 @@ struct EinstellungenAnsicht: View {
                 seite("Zuhause und Unterwegs", "house.fill", .green) { zuhause }
                 seite("Kalender, Watch, Personaldaten", "ellipsis.circle.fill", .gray) { weiteres }
             }
+            Section {
+                Button {
+                    schliessen()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { kern.assistentOffen = true }
+                } label: { Label("Einrichtungs-Assistent starten", systemImage: "wand.and.stars") }
+            }
             Section("Über") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
                 Link("Guten Morgen auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
@@ -549,10 +556,11 @@ struct EinstellungenAnsicht: View {
                         ForEach(Farbton.alle) { f in
                             Button { k.einstellungen.farbton = f.id } label: {
                                 VStack(spacing: 6) {
-                                    LinearGradient(colors: f.widget, startPoint: .top, endPoint: .bottom)
+                                    // Liquid Glass: Vorschau im System-Hintergrund statt Farbverlauf
+                                    Rectangle().fill(f.systemGrund ? AnyShapeStyle(Color(uiColor: .secondarySystemGroupedBackground)) : AnyShapeStyle(LinearGradient(colors: f.widget, startPoint: .top, endPoint: .bottom)))
                                         .frame(width: 58, height: 58).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(f.id == kern.einstellungen.farbton ? Color.primary : .clear, lineWidth: 3))
-                                        .overlay { if f.id == kern.einstellungen.farbton { Image(systemName: "checkmark").font(.headline.weight(.bold)).foregroundStyle(.white) } }
+                                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(f.id == kern.einstellungen.farbton ? Color.primary : Color.secondary.opacity(f.systemGrund ? 0.3 : 0), lineWidth: f.id == kern.einstellungen.farbton ? 3 : 1))
+                                        .overlay { if f.id == kern.einstellungen.farbton { Image(systemName: "checkmark").font(.headline.weight(.bold)).foregroundStyle(f.systemGrund ? Color.primary : .white) } }
                                     Text(f.name).font(.caption).foregroundStyle(.primary)
                                 }
                             }.buttonStyle(.plain)
