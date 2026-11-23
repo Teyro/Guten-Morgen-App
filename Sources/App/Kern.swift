@@ -120,10 +120,11 @@ final class Kern {
             vorschauDaten()
             return
         }
-        einstellungen = UserDefaults.standard.string(forKey: "einstellungen").flatMap(MorgenEinstellungen.aus(json:)) ?? MorgenEinstellungen()
+        var gelesen = UserDefaults.standard.string(forKey: "einstellungen").flatMap(MorgenEinstellungen.aus(json:)) ?? MorgenEinstellungen()
         // 2.10: Widget einmalig auf den Apple-Stil (Liquid Glass) – alte Farbverläufe wirkten fremd; Farbe bleibt wählbar
-        if !UserDefaults.standard.bool(forKey: "widgetGlas") { einstellungen.farbton = "system"; UserDefaults.standard.set(true, forKey: "widgetGlas") }
-        token =Schluesselbund.lesen("token") ?? ""
+        if !UserDefaults.standard.bool(forKey: "widgetGlas") { gelesen.farbton = "system"; UserDefaults.standard.set(true, forKey: "widgetGlas") }
+        einstellungen = gelesen
+        token = Schluesselbund.lesen("token") ?? ""
         mensaPasswort = Schluesselbund.lesen("mensa") ?? ""
         freigabePasswort = Schluesselbund.lesen("freigabe") ?? ""
         iservPasswort = Schluesselbund.lesen("iserv") ?? ""
