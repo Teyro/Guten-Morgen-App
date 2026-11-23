@@ -55,12 +55,11 @@ struct MensaAnsicht: View {
             if let p = kern.mensaPlan {
                 Section { held(p, e).listRowBackground(Color.clear).listRowSeparator(.hidden) }
                 Section { kennzahlen(p).listRowBackground(Color.clear).listRowSeparator(.hidden) }
-                // alle Wochen untereinander (wie im Kantinen-Widget), jede mit Überschrift
-                let wochen = wochen(p.tage.filter { $0.datum >= Zeit.iso(kern.essenTag) })
-                ForEach(wochen.indices, id: \.self) { i in
-                    if wochen.count > 1 {
-                        Text(wochen[i].0).font(.title3.weight(.bold)).padding(.top, 8).listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    }
+                // Wochen zum Blättern; Start = Woche des Essenstags (am Wochenende also die nächste)
+                let wochen = wochen(p.tage)
+                if !wochen.isEmpty {
+                    let i = min(max(woche, 0), wochen.count - 1)
+                    Section { wochenKopf(wochen, i, gut: gut, e: e).listRowBackground(Color.clear).listRowSeparator(.hidden) }
                     ForEach(wochen[i].1, id: \.datum) { t in
                         Section { tag(t, gut: gut, schlecht: schlecht, e: e) } header: { tagKopf(t) }
                     }
@@ -93,10 +92,38 @@ struct MensaAnsicht: View {
         .tint(Kantine.akzent)
         .navigationTitle("Speiseplan")
         .refreshable { await kern.aktualisieren() }
-        .onAppear { woche = wochen(kern.mensaPlan?.tage ?? []).firstIndex { w in w.1.contains { $0.datum == Zeit.iso(kern.essenTag) } } ?? 0 }
+        .onAppear { let ziel = Zeit.iso(kern.essenTag), w = wochen(kern.mensaPlan?.tage ?? []); woche = w.firstIndex { $0.1.contains { $0.datum >= ziel } } ?? max(w.count - 1, 0) }
     }
 
     // MARK: Teile
+
+    private func istGut(_ g: Gericht, _ gut: Set<String>, _ e: MorgenEinstellungen) -> Bool {
+        gut.contains(g.schluessel) || (!e.favoriten.isEmpty && g.passt(e.favoriten))
+    }
+
+    /// ‹ Nächste Woche › und wie oft es dort etwas aus den Favoriten gibt
+    private func wochenKopf(_ wochen: [(String, [MensaTag])], _ i: Int, gut: Set<String>, e: MorgenEinstellungen) -> some View {
+        let treffer = wochen[i].1.compactMap { t in t.frei == nil ? t.gerichte.first { istGut($0, gut, e) }.map { (t, $0) } : nil }
+        let kurz: (MensaTag) -> String = { t in (Zeit.tag(t.datum) ?? Date()).formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.abbreviated)) }
+        return VStack(spacing: 10) {
+            HStack {
+                Button { woche = i - 1 } label: { Image(systemName: "chevron.left").font(.headline).frame(width: 44, height: 44).glas(22) }
+                    .buttonStyle(.plain).disabled(i == 0).accessibilityLabel("Woche zurück")
+                Spacer()
+                Text(wochen[i].0).font(.title3.weight(.bold))
+                Spacer()
+                Button { woche = i + 1 } label: { Image(systemName: "chevron.right").font(.headline).frame(width: 44, height: 44).glas(22) }
+                    .buttonStyle(.plain).disabled(i >= wochen.count - 1).accessibilityLabel("Woche vor")
+            }
+            if !gut.isEmpty || !e.favoriten.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(treffer.isEmpty ? "Diesmal nichts aus deinen Favoriten" : "⭐ \(treffer.count)× aus deinen Favoriten").font(.headline)
+                    if !treffer.isEmpty { Text(treffer.map { "\(kurz($0.0)) \($0.1.text)" }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(12).glas(16, farbe: treffer.isEmpty ? nil : .yellow)
+            }
+        }
+    }
 
     /// Held: was es (für dich) heute bzw. morgen gibt
     @ViewBuilder private func held(_ p: MensaPlan, _ e: MorgenEinstellungen) -> some View {
@@ -160,7 +187,7 @@ struct MensaAnsicht: View {
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
         ForEach(t.gerichte, id: \.self) { g in
-            let istGut = gut.contains(g.schluessel) || (!e.favoriten.isEmpty && g.passt(e.favoriten))
+            let istGut = istGut(g, gut, e)
             let istSchlecht = schlecht.contains(g.schluessel) || (!e.meiden.isEmpty && g.passt(e.meiden, mitZusatz: true))
             HStack(alignment: .top, spacing: 10) {
                 Text(g.emoji).font(.system(size: 26))
