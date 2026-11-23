@@ -186,7 +186,7 @@ final class ErsetztTests: XCTestCase {
         // 5. Stunde (12:20–13:05) fällt laut WebUntis aus
         let b = e.schultag(mo, vertretung: v, ausfall: [740...785])
         let drei = b.first { $0.name == "3" }!
-        XCTAssertEqual(drei.art, .vertretung)
+        XCTAssertEqual(drei.art, Block.Art.vertretung)
         XCTAssertEqual(drei.ersetzt, "6b Deutsch")
         let fuenf = b.first { $0.name == "5" }!
         XCTAssertEqual(fuenf.art, .frei)
@@ -227,6 +227,8 @@ final class ErsetztTests: XCTestCase {
 
     /// Montag, 23.11.2026 (echter Plan): Frühbetreuung Mensa +Sta, „Begleitung Nelson 1. FSJ Abdul, 2.Schu, 3.-5. Sta“
     func testFruehUndBegleitung() {
+        func tag(_ j: Int, _ m: Int, _ t: Int) -> Date { Zeit.kalender.date(from: DateComponents(year: j, month: m, day: t, hour: 12))! }
+        func uhr(_ d: Date) -> String { Zeit.hhmm(Zeit.kalender.component(.hour, from: d) * 60 + Zeit.kalender.component(.minute, from: d)) }
         var e = MorgenEinstellungen()
         e.unterricht = [Unterricht(tag: 2, stunde: "3", klasse: "4a", fach: "Mathe"), Unterricht(tag: 2, stunde: "0", klasse: "VSK", fach: "Frühförderung")]
         var v = VertretungsPlan(); v.datum = "2026-11-23"
@@ -239,9 +241,9 @@ final class ErsetztTests: XCTestCase {
         XCTAssertEqual(b.first?.ersetzt, "VSK Frühförderung")
         XCTAssertEqual(uhr(Stundenplan.beginn(b)!), "08:00")
         let drei = b.first { $0.name == "3" }!
-        XCTAssertEqual(drei.text, "2c → Nelson"); XCTAssertEqual(drei.ersetzt, "4a Mathe"); XCTAssertEqual(drei.art, .vertretung)
+        XCTAssertEqual(drei.text, "2c → Nelson"); XCTAssertEqual(drei.ersetzt, "4a Mathe"); XCTAssertEqual(drei.art, Block.Art.vertretung)
         XCTAssertEqual(b.first { $0.name == "5" }?.text, "2c → Nelson")
-        XCTAssertEqual(b.first { $0.name == "2" }?.art, .frei)
+        XCTAssertEqual(b.first { $0.name == "2" }?.art, Block.Art.frei)
         // ohne Früh-Eintrag keine leere 0. Stunde
         v.stunden = []; e.unterricht.removeLast()
         XCTAssertEqual(e.schultag(tag(2026, 11, 23), vertretung: v, ganz: true).first?.name, "1")
