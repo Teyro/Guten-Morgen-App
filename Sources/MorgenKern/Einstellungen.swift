@@ -77,6 +77,8 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var abwesenheiten = false
     /// Nur diese Klassen („2a, 2b“), leer = alle
     public var abwesendKlassen = ""
+    /** Ausgegraut: diese Namen stehen in der Liste, zählen aber nicht mit (Leute, mit denen man nicht zusammenarbeitet) */
+    public var abwesendAus: [String] = []
     /// Widget: nur Vorname + Initiale
     public var sichtschutz = true
     public var abwesendQuelle: IServQuelle?
@@ -162,7 +164,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         case weckzeiten, vorlauf, fruehestens, ferienFrei, feiertagFrei, bundesland, weckerAutomatisch, ortName, lat, lon, haAdresse,
              nacht, morgen, post, vertretung, vertretungLink, kuerzel, untisKuerzel, termine, erinnerungen, haeuser, mensa, mensaAdresse, mensaBenutzer, obst, obstKalender, farbton,
              favoriten, meiden, kollegium, meinTagSkript, gesundheit, lieblingsGerichte, nichtLecker,
-             iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
+             iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, abwesendAus, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
              mitteilungen, vertretungMelden, vertretungDa, vertretungDringend, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
              untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
@@ -186,7 +188,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         meinTagSkript = w(.meinTagSkript, s.meinTagSkript); gesundheit = w(.gesundheit, s.gesundheit)
         lieblingsGerichte = w(.lieblingsGerichte, s.lieblingsGerichte); nichtLecker = w(.nichtLecker, s.nichtLecker)
         iservServer = w(.iservServer, s.iservServer); iservBenutzer = w(.iservBenutzer, s.iservBenutzer); iservHosts = w(.iservHosts, s.iservHosts)
-        abwesenheiten = w(.abwesenheiten, s.abwesenheiten); abwesendKlassen = w(.abwesendKlassen, s.abwesendKlassen); sichtschutz = w(.sichtschutz, s.sichtschutz)
+        abwesenheiten = w(.abwesenheiten, s.abwesenheiten); abwesendKlassen = w(.abwesendKlassen, s.abwesendKlassen); abwesendAus = w(.abwesendAus, s.abwesendAus); sichtschutz = w(.sichtschutz, s.sichtschutz)
         abwesendQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .abwesendQuelle)) ?? nil
         stoerungen = w(.stoerungen, s.stoerungen); erledigteZeigen = w(.erledigteZeigen, s.erledigteZeigen)
         stoerungQuelle = (try? c.decodeIfPresent(IServQuelle.self, forKey: .stoerungQuelle)) ?? nil

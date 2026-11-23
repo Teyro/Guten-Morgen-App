@@ -39,6 +39,8 @@ struct MorgenEintrag: TimelineEntry {
     var schulName = "heute"
     /// Kinder, die fehlen (schon mit Sichtschutz), offene Störungen, offene Aufgaben – nil = Modul aus
     var kinder: [String]?
+    /// Zahl im Kasten „Fehlen“: IServ ohne Ausgegraute, ab Vertretungsplan „7 + 2“ (krank + außer Haus)
+    var fehlen: (zahl: String, text: String)?
     var stoerungen: Int?
     var aufgaben: Int?
     /// Schule zuerst oder (zu Hause, am Wochenende) Termine und Post zuerst
@@ -187,12 +189,14 @@ struct MorgenZeitleiste: TimelineProvider {
         let ortung = CLLocationManager()
         if ortung.isAuthorizedForWidgetUpdates, let l = ortung.location { hier = Kontext.Ort(lat: l.coordinate.latitude, lon: l.coordinate.longitude) }
         let kontext = Kontext.bestimme(jetzt: jetzt, frei: frei, hier: hier, schule: e.schulOrt, zuhause: e.zuhauseOrt)
-        let kinder = abw.map { Abwesenheiten.amTag($0.eintraege, ziel: schulTag, klassen: e.klassenListe).map { e.sichtschutz ? Abwesenheiten.kurzName($0.name) : $0.name } }
+        let amTag = abw.map { Abwesenheiten.amTag($0.eintraege, ziel: schulTag, klassen: e.klassenListe) }
+        let kinder = amTag.map { $0.filter { !Abwesenheiten.ausgegraut($0, e.abwesendAus) }.map { e.sichtschutz ? Abwesenheiten.kurzName($0.name) : $0.name } }
+        let fehlen = amTag.map { Abwesenheiten.zahl($0, aus: e.abwesendAus, plan: plan, ziel: schulTag) }
         return MorgenEintrag(date: jetzt, eingerichtet: true, wecker: wecker, wetter: await w, termin: naechster, post: await p,
                              heute: tagesTermine, vertretung: e.vertretung ? plan : nil, haeuser: e.haeuser,
                              mensa: e.mensa ? mensaPlan?.tag(ziel) : nil, mensaWahl: (e.favoriten, e.meiden), gemerkt: (e.lieblingsGerichte, e.nichtLecker),
                              obst: e.obstBereit && obstTage.contains(ziel), farbton: e.farbton, schulName: Tagwahl.name(schulTag, jetzt: jetzt),
-                             kinder: e.abwesenheiten ? kinder : nil, stoerungen: e.stoerungen ? stoe?.offen.count : nil, aufgaben: e.aufgaben ? auf?.offen.count : nil,
+                             kinder: e.abwesenheiten ? kinder : nil, fehlen: e.abwesenheiten ? fehlen : nil, stoerungen: e.stoerungen ? stoe?.offen.count : nil, aufgaben: e.aufgaben ? auf?.offen.count : nil,
                              kontext: kontext)
     }
 }
@@ -305,8 +309,9 @@ struct MorgenWidgetAnsicht: View {
         HStack(spacing: 6) {
             if let k = e.kinder {
                 kasten("Fehlen", "person.crop.circle.badge.xmark", ziel: "abwesend", gleichHoch: true) {
-                    Text("\(k.count)").font(.headline.monospacedDigit())
-                    Text(k.isEmpty ? "niemand" : k.prefix(2).joined(separator: ", ")).font(.caption2).lineLimit(1).opacity(0.75)
+                    Text(e.fehlen?.zahl ?? "\(k.count)").font(.headline.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
+                    // ab Vertretungsplan: „krank + außer Haus“, sonst die ersten Namen
+                    Text(e.fehlen.map { $0.text.hasPrefix("krank") } == true ? e.fehlen!.text : (k.isEmpty ? "niemand" : k.prefix(2).joined(separator: ", "))).font(.caption2).lineLimit(1).opacity(0.75)
                 }
             }
             if let s = e.stoerungen {

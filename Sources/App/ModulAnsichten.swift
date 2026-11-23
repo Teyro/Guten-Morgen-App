@@ -1,7 +1,8 @@
 import SwiftUI
 import MorgenKern
 
-/// Wer fehlt (Kinder) – nur Anzeige, wie im Abwesenheiten-Skript: ganztägig zuerst, dann einzelne Stunden
+/// Wer fehlt – laut IServ. Antippen graut jemanden aus (steht weiter da, zählt aber nicht), noch einmal holt ihn zurück.
+/// Oben die Zahl: morgens aus IServ, ist der Vertretungsplan da, „krank + außer Haus“ laut Plan.
 struct AbwesendAnsicht: View {
     @Bindable var kern: Kern
 
@@ -9,22 +10,27 @@ struct AbwesendAnsicht: View {
         let e = kern.einstellungen
         let ziel = kern.schulTag
         let liste = Abwesenheiten.amTag(kern.abwesend?.eintraege ?? [], ziel: ziel, klassen: e.klassenListe)
+        let zaehlt = liste.filter { !Abwesenheiten.ausgegraut($0, e.abwesendAus) }
+        let grau = liste.filter { Abwesenheiten.ausgegraut($0, e.abwesendAus) }
+        let z = Abwesenheiten.zahl(liste, aus: e.abwesendAus, plan: kern.vertretung, ziel: ziel)
         List {
             Section {
                 HStack(spacing: 14) {
-                    Text("\(liste.count)").font(.system(size: 44, weight: .bold, design: .rounded))
+                    Text(z.zahl).font(.system(size: 44, weight: .bold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
                     VStack(alignment: .leading) {
-                        Text(liste.count == 1 ? "Kind fehlt" : "Kinder fehlen").font(.headline)
-                        Text(kern.schulTagName.capitalized + (e.klassenListe.isEmpty ? "" : " · " + e.klassenListe.joined(separator: ", "))).font(.subheadline).foregroundStyle(.secondary)
+                        Text(z.text.hasPrefix("krank") ? z.text + " (Vertretungsplan)" : z.text).font(.headline)
+                        Text(kern.schulTagName.capitalized + (e.klassenListe.isEmpty ? "" : " · " + e.klassenListe.joined(separator: ", "))
+                             + (z.text.hasPrefix("krank") ? " · IServ: \(zaehlt.count)" : "")).font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
                 }
                 .padding(14).glas(20).listRowBackground(Color.clear).listRowSeparator(.hidden)
                 if !kern.abwesendFehler.isEmpty { Label(kern.abwesendFehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).listRowBackground(Color.clear) }
-            }
-            let ganz = liste.filter { !$0.stundenweise }, std = liste.filter(\.stundenweise)
-            if !ganz.isEmpty { Section("Ganztägig") { ForEach(ganz, id: \.self) { zeile($0, ziel) } } }
-            if !std.isEmpty { Section("Einzelne Stunden") { ForEach(std, id: \.self) { zeile($0, ziel) } } }
+            } footer: { Text("Antippen graut aus: steht weiter in der Liste, zählt aber nicht mit. Noch einmal antippen holt zurück.") }
+            let ganz = zaehlt.filter { !$0.stundenweise }, std = zaehlt.filter(\.stundenweise)
+            if !ganz.isEmpty { Section("Ganztägig") { ForEach(ganz, id: \.self) { zeile($0, ziel, grau: false) } } }
+            if !std.isEmpty { Section("Einzelne Stunden") { ForEach(std, id: \.self) { zeile($0, ziel, grau: false) } } }
+            if !grau.isEmpty { Section("Ausgegraut – zählt nicht") { ForEach(grau, id: \.self) { zeile($0, ziel, grau: true) } } }
             if let s = kern.abwesend?.stand { Text("Stand " + s.uhrzeit).font(.caption).foregroundStyle(.secondary).listRowBackground(Color.clear) }
         }
         .listStyle(.insetGrouped)
@@ -34,15 +40,23 @@ struct AbwesendAnsicht: View {
         .refreshable { await kern.moduleLaden(erzwingen: true) }
     }
 
-    private func zeile(_ a: Abwesenheit, _ ziel: Date) -> some View {
+    private func zeile(_ a: Abwesenheit, _ ziel: Date, grau: Bool) -> some View {
         let art = Abwesenheiten.arten[a.art] ?? ("📌", "abwesend")
-        return HStack(spacing: 10) {
-            Text(art.emoji).font(.title3)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(a.name).font(.body.weight(.semibold))
-                Text([a.klasse, art.wort, Abwesenheiten.zeitText(a, ziel: ziel)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+        return Button {
+            if grau { kern.einstellungen.abwesendAus.removeAll { $0.trimmingCharacters(in: .whitespaces).lowercased() == a.name.trimmingCharacters(in: .whitespaces).lowercased() } }
+            else { kern.einstellungen.abwesendAus.append(a.name) }
+        } label: {
+            HStack(spacing: 10) {
+                Text(art.emoji).font(.title3).opacity(grau ? 0.4 : 1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(a.name).font(.body.weight(.semibold)).foregroundStyle(grau ? Color.secondary : Color.primary)
+                    Text([a.klasse, art.wort, Abwesenheiten.zeitText(a, ziel: ziel)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: grau ? "eye.slash" : "eye").foregroundStyle(.tertiary)
             }
-        }
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 }
 

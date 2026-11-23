@@ -390,7 +390,12 @@ struct SchuleKarte: View {
         let e = kern.einstellungen
         VStack(alignment: .leading, spacing: 0) {
             let kacheln: [(Bereich, String, String, String, Color)] = [
-                e.abwesenheiten ? (.abwesend, "person.crop.circle.badge.xmark", kern.abwesend.map { "\(Abwesenheiten.amTag($0.eintraege, ziel: kern.schulTag, klassen: e.klassenListe).count)" } ?? (kern.abwesendFehler.isEmpty ? "…" : "!"), "Kinder fehlen", Color.red) : nil,
+                e.abwesenheiten ? { () -> (Bereich, String, String, String, Color) in
+                    // morgens IServ (ohne Ausgegraute), ab Vertretungsplan „krank + außer Haus“ laut Plan
+                    let z = Abwesenheiten.zahl(Abwesenheiten.amTag(kern.abwesend?.eintraege ?? [], ziel: kern.schulTag, klassen: e.klassenListe), aus: e.abwesendAus, plan: kern.vertretung, ziel: kern.schulTag)
+                    let planDa = z.text.hasPrefix("krank")
+                    return (.abwesend, "person.crop.circle.badge.xmark", planDa || kern.abwesend != nil ? z.zahl : (kern.abwesendFehler.isEmpty ? "…" : "!"), z.text, Color.red)
+                }() : nil,
                 e.stoerungen ? (.stoerungen, "wrench.and.screwdriver.fill", kern.stoerungen.map { "\($0.offen.count)" } ?? (kern.stoerungenFehler.isEmpty ? "…" : "!"), "Störungen", Color.orange) : nil,
                 e.aufgaben ? (.aufgaben, "checklist", kern.aufgaben.map { "\($0.offen.count)" } ?? (kern.aufgabenFehler.isEmpty ? "…" : "!"), "Aufgaben", Color.teal) : nil,
             ].compactMap { $0 }
@@ -399,7 +404,7 @@ struct SchuleKarte: View {
                     ForEach(kacheln, id: \.0) { k in
                         Button { oeffne(k.0) } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) { Image(systemName: k.1).foregroundStyle(k.4); Text(k.2).font(.title3.weight(.bold).monospacedDigit()) }
+                                HStack(spacing: 4) { Image(systemName: k.1).foregroundStyle(k.4); Text(k.2).font(.title3.weight(.bold).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7) }
                                 Text(k.3).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading).padding(14).glas(22)

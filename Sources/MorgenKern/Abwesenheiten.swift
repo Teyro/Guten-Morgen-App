@@ -135,6 +135,30 @@ public enum Abwesenheiten {
     // MARK: Auswertung
 
     /// Wer fehlt am Zieltag: Filter nach Klassen (leer = alle), dieselbe Person nur einmal, ganztägig zuerst, dann Art und Name
+    /// Ausgegraut? (Name steht in [aus], ohne Groß/Klein und Leerzeichen am Rand)
+    public static func ausgegraut(_ a: Abwesenheit, _ aus: [String]) -> Bool {
+        let n = a.name.trimmingCharacters(in: .whitespaces).lowercased()
+        return aus.contains { $0.trimmingCharacters(in: .whitespaces).lowercased() == n }
+    }
+
+    /// Personen in einer Plan-Zeile: „Wa+Hoff (8:30-12:15)“ = 2
+    static func personen(_ liste: [String]) -> Int {
+        liste.reduce(0) { n, t in
+            n + max(1, t.components(separatedBy: "(")[0].split(whereSeparator: { "+&".contains($0) }).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count)
+        }
+    }
+
+    /// Zahl oben in der Kachel: morgens die Meldungen aus IServ (ohne Ausgegraute); ist der Vertretungsplan für den Tag da,
+    /// dessen „Es fehlen“ plus „Außer Haus“ – „7 + 2“ / „krank + außer Haus“.
+    public static func zahl(_ liste: [Abwesenheit], aus: [String], plan: VertretungsPlan?, ziel: Date) -> (zahl: String, text: String) {
+        if let p = plan, p.datum == Zeit.iso(ziel), !p.fehlen.isEmpty || !p.ausserListe.isEmpty {
+            let k = personen(p.fehlen), a = personen(p.ausserListe)
+            return a > 0 ? ("\(k) + \(a)", "krank + außer Haus") : ("\(k)", "krank")
+        }
+        let n = liste.filter { !ausgegraut($0, aus) }.count
+        return ("\(n)", n == 1 ? "fehlt" : "fehlen")
+    }
+
     public static func amTag(_ l: [Abwesenheit], ziel: Date, klassen: [String] = []) -> [Abwesenheit] {
         let z = Zeit.iso(ziel)
         let filter = klassen.map { $0.lowercased().replacingOccurrences(of: " ", with: "") }.filter { !$0.isEmpty }
