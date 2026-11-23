@@ -57,16 +57,18 @@ struct StoerungenAnsicht: View {
         let arbeit = st?.offen.filter(\.uebernommen) ?? []
         let erledigt = (st?.alle ?? []).filter(\.erledigt)
         List {
+            // Zahlen im Abschnittskopf: ohne Listen-Hintergrund dahinter, Glas-Schatten werden nicht abgeschnitten
             Section {
+                if !kern.stoerungenFehler.isEmpty {
+                    Label(kern.stoerungenFehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+                }
+            } header: {
                 HStack(spacing: 10) {
                     StatusZahl(zahl: neu.count, text: "Noch niemand", symbol: "exclamationmark.circle.fill", farbe: .orange)
                     StatusZahl(zahl: arbeit.count, text: "In Arbeit", symbol: "wrench.adjustable.fill", farbe: .blue)
                     StatusZahl(zahl: erledigt.count, text: "Erledigt", symbol: "checkmark.circle.fill", farbe: .green)
                 }
-                .listRowBackground(Color.clear).padding(.vertical, 10).listRowInsets(EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2)).listRowSeparator(.hidden)
-                if !kern.stoerungenFehler.isEmpty {
-                    Label(kern.stoerungenFehler, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
-                }
+                .textCase(nil).foregroundStyle(.primary).padding(.vertical, 10).listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             }
             gruppe("Noch niemand zuständig", neu, farbe: .orange)
             gruppe("In Arbeit", arbeit, farbe: .blue)

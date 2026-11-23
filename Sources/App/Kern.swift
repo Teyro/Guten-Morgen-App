@@ -661,7 +661,7 @@ final class Kern {
                    Termin(titel: "Zahnarzt", start: k.date(bySettingHour: 15, minute: 30, second: 0, of: heute)!, ganztags: false)]
         erinnerungen = ["Elternbriefe kopieren"]
         post = "Heute kommt ein Paket: Thalia (DHL). Dazu ein Brief."
-        var p = VertretungsPlan(); p.stunden = [.init(stunde: "2", klasse: "2c")]; p.pausen = [.init(pause: "2. Pause", ort: "Mensa + Haltestelle")]
+        var p = VertretungsPlan(); p.stunden = [.init(stunde: "2", klasse: "2c"), .init(stunde: "Frühbetreuung Mensa", klasse: "")]; p.bemerkungen = [Bemerkung(stunden: [4], was: "Begleitung Nelson", klasse: "2c", text: "")]; p.pausen = [.init(pause: "2. Pause", ort: "Mensa + Haltestelle")]
         vertretung = p
         einstellungen.haeuser = ["Haus 2": ["2a", "2b", "2c"]]
         einstellungen.mensa = true; einstellungen.obst = true
