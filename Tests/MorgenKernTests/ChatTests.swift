@@ -36,3 +36,18 @@ final class ChatTests: XCTestCase {
         XCTAssertTrue(Stoerungen.istIch("Linda Beutel", benutzer: "christian.stake", ichName: "Linda Beutel"))   // von Hand festgelegt hat Vorrang
     }
 }
+
+final class ChatBereinigenTests: XCTestCase {
+    /// Textbausteine („Kein weiterer Kommentar“, „Kommentar hinzufügen“, Angaben-Spalten) und Wiederholungen fliegen raus
+    func testBausteineUndWiederholungen() {
+        let l = [
+            StoerungVerlauf.Eintrag(autor: "", zeit: "", text: "Das Board bleibt schwarz.\nStatus: Neu\nRaum: 104\nDas Board bleibt schwarz.\nKein weiterer Kommentar."),
+            StoerungVerlauf.Eintrag(autor: "Kim Muster", zeit: "", text: "Kommentar hinzufügen"),
+            StoerungVerlauf.Eintrag(autor: "Kim Muster", zeit: "", text: "Schaue ich mir morgen an."),
+            StoerungVerlauf.Eintrag(autor: "Kim Muster", zeit: "", text: "Schaue ich mir  morgen an."),
+            StoerungVerlauf.Eintrag(autor: "Kim Muster", zeit: "", text: "Danke"),
+            StoerungVerlauf.Eintrag(autor: "Linda Beutel", zeit: "", text: "Danke"),
+        ]
+        XCTAssertEqual(Stoerungen.bereinigen(l).map(\.text), ["Das Board bleibt schwarz.", "Schaue ich mir morgen an.", "Danke", "Danke"])
+    }
+}

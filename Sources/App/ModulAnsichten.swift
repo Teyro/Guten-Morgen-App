@@ -205,8 +205,11 @@ struct StoerungDetail: View {
                 }
                 .padding(.vertical, 4).glas(22)
 
-                abschnitt("Beschreibung", "text.alignleft") {
-                    Text(m.inhalt.isEmpty ? "Kein weiterer Text." : m.inhalt).font(.body).foregroundStyle(m.inhalt.isEmpty ? .secondary : .primary).textSelection(.enabled)
+                // leere Beschreibung und eine, die im Verlauf schon als erste Blase steht, nicht zeigen
+                if !m.inhalt.isEmpty, !(verlauf?.eintraege.contains { Self.gleich($0.text, m.inhalt) } ?? false) {
+                    abschnitt("Beschreibung", "text.alignleft") {
+                        Text(m.inhalt).font(.body).textSelection(.enabled)
+                    }
                 }
 
                 if !m.url.isEmpty {
@@ -214,6 +217,7 @@ struct StoerungDetail: View {
                         if let v = verlauf {
                             if v.eintraege.isEmpty { Text("Noch keine Antworten.").foregroundStyle(.secondary) }
                             let liste = nachrichten(v.eintraege)
+                            let farben = Self.farben(liste, kern.personenFarben)
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(liste.enumerated()), id: \.offset) { i, e in
                                     let vorher = i > 0 ? liste[i - 1] : nil
@@ -223,7 +227,7 @@ struct StoerungDetail: View {
                                             .frame(maxWidth: .infinity).padding(.vertical, 6)
                                     }
                                     // Name nur beim Absenderwechsel, Folgenachrichten derselben Person enger darunter
-                                    blase(e, mitName: vorher?.autor != e.autor || (vorher.flatMap { tagText($0.zeit) } != tagText(e.zeit)))
+                                    blase(e, farbe: farben[e.autor] ?? .gray, mitName: vorher?.autor != e.autor || (vorher.flatMap { tagText($0.zeit) } != tagText(e.zeit)))
                                         .padding(.top, vorher?.autor == e.autor ? 0 : 8)
                                 }
                             }
@@ -271,11 +275,10 @@ struct StoerungDetail: View {
         return d.formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.wide).day().month(.wide))
     }
 
-    private func blase(_ e: StoerungVerlauf.Eintrag, mitName: Bool = true) -> some View {
+    private func blase(_ e: StoerungVerlauf.Eintrag, farbe: Color, mitName: Bool = true) -> some View {
         // eigene Nachrichten rechts (angemeldeter IServ-Benutzer bzw. „Ich bin“ aus den Einstellungen), alle anderen links
         let ich = Stoerungen.istIch(e.autor, benutzer: kern.einstellungen.iservBenutzer, ichName: kern.einstellungen.ichName)
         let technik = ich
-        let farbe = Aufgaben.farbe(fuer: e.autor, in: kern.personenFarben).map(FarbWahl.farbe) ?? Self.namensFarbe(e.autor)
         let initialen = e.autor.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
         let kreis = Text(initialen.isEmpty ? "?" : initialen).font(.caption2.weight(.bold)).foregroundStyle(.white)
             .frame(width: 30, height: 30).background(farbe.gradient, in: Circle())
@@ -287,7 +290,7 @@ struct StoerungDetail: View {
                 if let u = uhrzeit(e.zeit) { Text(u).font(.caption2).foregroundStyle(technik ? Color.white.opacity(0.8) : Color.secondary) }
             }
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(technik ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(farbe.opacity(0.16)),
+            .background(technik ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(farbe.opacity(0.22)),
                         in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: technik ? 18 : 4, bottomTrailingRadius: technik ? 4 : 18, topTrailingRadius: 18, style: .continuous))
             .frame(maxWidth: .infinity, alignment: technik ? .trailing : .leading)
             if technik { EmptyView() } else { Spacer(minLength: 24) }
@@ -299,11 +302,29 @@ struct StoerungDetail: View {
         zeit.range(of: #"\d{1,2}:\d{2}"#, options: .regularExpression).map { String(zeit[$0]) }
     }
 
+    /// Gleicher Text (Groß-/Kleinschreibung und Leerraum egal)
+    static func gleich(_ a: String, _ b: String) -> Bool {
+        func n(_ s: String) -> String { s.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        return n(a) == n(b)
+    }
+
+    /// Jede Person im Gespräch eine eigene Farbe wie im WhatsApp-Gruppenchat: Farbe aus dem Board „Medien“, sonst der Reihe nach aus der Palette
+    static func farben(_ l: [StoerungVerlauf.Eintrag], _ vorgabe: [String: String]) -> [String: Color] {
+        var aus: [String: Color] = [:], frei = palette
+        for e in l where aus[e.autor] == nil {
+            if let f = Aufgaben.farbe(fuer: e.autor, in: vorgabe).map(FarbWahl.farbe) { aus[e.autor] = f; continue }
+            let c = frei.isEmpty ? namensFarbe(e.autor) : frei.remove(at: Int(hash(e.autor) % UInt32(frei.count)))
+            aus[e.autor] = c
+        }
+        return aus
+    }
+
+    static let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown, .mint, .cyan]
+    static func hash(_ s: String) -> UInt32 { s.lowercased().unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value } }
+
     /// Feste Farbe aus dem Namen (gleicher Name = gleiche Farbe)
     static func namensFarbe(_ name: String) -> Color {
-        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown, .mint, .cyan]
-        let h = name.lowercased().unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
-        return palette[Int(h % UInt32(palette.count))]
+        palette[Int(hash(name) % UInt32(palette.count))]
     }
 
     private func abschnitt<I: View>(_ titel: String, _ symbol: String, @ViewBuilder inhalt: () -> I) -> some View {

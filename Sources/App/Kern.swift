@@ -32,6 +32,8 @@ final class Kern {
     var untisFavoriten: [UntisElement] = Kern.gemerkt("untisFavoriten") ?? [] { didSet { merke(untisFavoriten, "untisFavoriten") } }
     var untisElemente: [UntisElement] = []
     /// Farben der Personen (Board „Medien“ in Edupool) für die Blasen im Störungsverlauf
+    /// Eigene Vertretungs-Statistik (nur über mich), wächst mit jedem geladenen Plan
+    var statistik: VertretungsStatistik = Kern.gemerkt("vertretungsStatistik") ?? VertretungsStatistik() { didSet { if statistik != oldValue { merke(statistik, "vertretungsStatistik") } } }
     var personenFarben: [String: String] = Kern.gemerkt("personenFarben") ?? [:] { didSet { merke(personenFarben, "personenFarben") } }
     var untisSucheHinweis = ""
     @ObservationIgnored private var untisSuche: Untis.Suche?
@@ -385,7 +387,7 @@ final class Kern {
         async let o: Set<String>? = e.obstBereit ? try? await SchulKalender.laden(e.obstKalender) : nil
         async let st: [SchulKalender.Termin]? = !e.schulKalender.isEmpty ? try? await SchulKalender.termineLaden(e.schulKalender) : nil
         switch await v {
-        case .success(let p)?: vertretung = p; vertretungFehler = ""
+        case .success(let p)?: vertretung = p; vertretungFehler = ""; statistik.merken(p)
         case .failure(let f)?: vertretungFehler = (f as? URLError)?.code == .userAuthenticationRequired ? "Freigabe-Passwort fehlt oder stimmt nicht" : "Vertretungsplan nicht erreichbar"
         case nil: vertretung = nil; vertretungFehler = ""
         }

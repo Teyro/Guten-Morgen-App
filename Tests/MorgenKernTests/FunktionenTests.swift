@@ -83,7 +83,7 @@ final class StartseiteTests: XCTestCase {
     func testAlteReihenfolgeBekommtNeueKachelnHinterSchule() {
         // gespeichert mit 2.4 (nur 5 Kacheln): Speiseplan, Zahlen, Schultermine waren Teil der Schule
         let r = Startseite.vollstaendig(["termine", "schule", "wecker", "wetter", "post"], inDerSchule: true)
-        XCTAssertEqual(r, ["termine", "schule", "mensa", "zahlen", "schultermine", "wecker", "wetter", "post", "personal"])
+        XCTAssertEqual(r, ["termine", "schule", "mensa", "zahlen", "schultermine", "wecker", "wetter", "post", "personal", "fussball"])
         XCTAssertEqual(Set(r).count, Startseite.alle.count)
         // Unbekanntes aus einer neueren Version wird ignoriert
         XCTAssertFalse(Startseite.vollstaendig(["schule", "gibtsnicht"], inDerSchule: true).contains("gibtsnicht"))

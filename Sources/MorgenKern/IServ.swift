@@ -313,7 +313,7 @@ public final class IServ: @unchecked Sendable {
             guard let s = try? await hole(url), s.status < 400 else { continue }
             if let d = lesen(s, []) { return (IServQuelle(url: s.url, art: "direkt"), d) }
             let spalten = HTML.spalten(s.body)
-            let kand = Self.datenKandidaten(s.body, von: s.url).sorted { ($0.range(of: "export|csv", options: .regularExpression) != nil ? 0 : 1) < ($1.range(of: "export|csv", options: .regularExpression) != nil ? 0 : 1) }
+            let kand = Self.datenKandidaten(s.body, von: s.url, muster: muster).sorted { ($0.range(of: "export|csv", options: .regularExpression) != nil ? 0 : 1) < ($1.range(of: "export|csv", options: .regularExpression) != nil ? 0 : 1) }
             for d in kand.prefix(8) where !gesehen.contains(d) {
                 gesehen.insert(d)
                 let q = IServQuelle(url: d, art: "daten", referer: s.url, spalten: spalten)
@@ -330,13 +330,15 @@ public final class IServ: @unchecked Sendable {
     }
 
     /// Datenadressen auf einer Modulseite (data-*, Export-Links, fetch-Pfade)
-    static func datenKandidaten(_ html: String, von: String) -> [String] {
+    static func datenKandidaten(_ html: String, von: String, muster: String = "absence|abwesen") -> [String] {
         var urls: [String] = []
         for u in HTML.alle(#"(?:data-[a-z-]*(?:url|source|src|endpoint|api)[a-z-]*|src|href|action)=["']([^"']+)["']"#, html) {
             let e = HTML.entities(u)
             if e.range(of: "json|api|list|data|export|csv|absence|abwesen|sick|krank|defect|ticket", options: [.regularExpression, .caseInsensitive]) != nil,
                e.range(of: #"\.(css|js|png|svg|ico|woff2?)(\?|$)"#, options: [.regularExpression, .caseInsensitive]) == nil { urls.append(HTML.absolut(e, von: von)) }
         }
+        // auch Pfade aus Skripten (fetch/ajax) wie im alten Abwesenheiten-Widget
+        for u in HTML.alle(#"["'](/iserv/[^"'\s<>]*(?:"# + muster + #")[^"'\s<>]*)["']"#, html) { urls.append(HTML.absolut(HTML.entities(u), von: von)) }
         var gesehen = Set<String>()
         return urls.filter { !aendert($0) && gesehen.insert($0).inserted }
     }

@@ -213,7 +213,28 @@ extension Stoerungen {
             if !t.isEmpty { eintraege.append(.init(autor: "", zeit: "", text: String(t.prefix(8000)))) }
         }
         // Ein Block mit mehreren Kommentaren (Sammelbehälter oder ganze Seite): an „Name am 18.11.2026 11:03“ trennen
-        return StoerungVerlauf(eintraege: eintraege.flatMap(aufteilen), formular: formular)
+        return StoerungVerlauf(eintraege: bereinigen(eintraege.flatMap(aufteilen)), formular: formular)
+    }
+
+    /// Textbausteine der IServ-Seite (Knöpfe, leere Hinweise, Angaben-Spalten), die in Blasen keinen Sinn ergeben – je ganze Zeile
+    static let bausteinMuster = #"(?im)^[ \t]*(?:(?:es\s+(?:gibt|sind)\s+)?(?:noch\s+)?kein(?:e|en)?\s+(?:weitere[nrs]?\s+)?(?:kommentare?|antworten?|text|dateien|anh(?:ä|ae)nge?|beschreibung|nachrichten?)(?:\s+(?:vorhanden|verfügbar|hinzugefügt))?\.?|(?:einen\s+|neuen?\s+)?(?:kommentare?|antwort)\s+(?:hinzufügen|schreiben|verfassen|absenden|abschicken|senden|speichern)|kommentare?(?:\s*\(\d+\))?|antworten|dateien|anh(?:ä|ae)nge?|bearbeiten|l(?:ö|oe)schen|speichern|abbrechen|zur(?:ü|ue)ck|mehr\s+anzeigen|weniger\s+anzeigen|(?:status|raum|ort|ger(?:ä|ae)t|standort|kategorie|priorit(?:ä|ae)t|bearbeiter(?:in)?|zust(?:ä|ae)ndig|gemeldet(?:\s+von)?|erstellt(?:\s+von|\s+am)?|aktualisiert(?:\s+am)?|ge(?:ä|ae)ndert(?:\s+am)?|datum)\s*:.{0,60})[ \t]*$"#
+
+    /// Textbausteine weg, doppelte Zeilen in einer Blase weg, gleicher Text nur einmal (kurze wie „Danke“ nur je Person)
+    static func bereinigen(_ l: [StoerungVerlauf.Eintrag]) -> [StoerungVerlauf.Eintrag] {
+        var gesehen = Set<String>(), aus: [StoerungVerlauf.Eintrag] = []
+        for var e in l {
+            var zeilen: [String] = [], doppelt = Set<String>()
+            for z in e.text.replacingOccurrences(of: bausteinMuster, with: "", options: .regularExpression).components(separatedBy: "\n") {
+                let k = z.trimmingCharacters(in: .whitespaces).lowercased()
+                if !k.isEmpty, !doppelt.insert(k).inserted { continue }
+                zeilen.append(z)
+            }
+            e.text = zeilen.joined(separator: "\n").replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = e.text.lowercased().components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+            guard !t.isEmpty, gesehen.insert(t.count >= 20 ? t : e.autor + "|" + t).inserted else { continue }
+            aus.append(e)
+        }
+        return aus
     }
 
     /// Kommentarkopf wie in IServ: „Christian Stake am 18.11.2026 11:03“ (auch „…, 11:03 Uhr“) am Zeilenanfang

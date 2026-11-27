@@ -274,10 +274,15 @@ struct VertretungAnsicht: View {
                     if p.fehlt { Label("Du bist als fehlend eingetragen", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                     if p.ausserHaus { Label("Du bist außer Haus eingetragen", systemImage: "figure.walk.departure").foregroundStyle(.orange) }
                     if p.stunden.isEmpty && p.pausen.isEmpty && !p.fehlt { Label("Keine Vertretung, keine Aufsicht", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-                    ForEach(p.stunden, id: \.self) { s in
-                        let h = Vertretung.haus(s.klasse, e.haeuser)
-                        Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .blue,
-                              titel: "Vertretung \(s.klasse)", unter: [Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde, h].filter { !$0.isEmpty }.joined(separator: " · "))
+                    // rot = außerplanmäßig: Vertretung bzw. Begleitung, die eigene Stunde darüber rot durchgestrichen (wie im Stundenplan)
+                    let rot = p.datum.flatMap(Zeit.tag).map { e.schultag($0, vertretung: p).filter { $0.art == .vertretung } } ?? []
+                    ForEach(rot, id: \.self) { b in StundenZeile(b: b) }
+                    if rot.isEmpty {
+                        ForEach(p.stunden, id: \.self) { s in
+                            let h = Vertretung.haus(s.klasse, e.haeuser)
+                            Zeile(marke: Int(s.stunde) != nil ? "\(s.stunde)." : String(s.stunde.prefix(4)), farbe: .red,
+                                  titel: "Vertretung \(s.klasse)", unter: [Int(s.stunde) != nil ? "\(s.stunde). Stunde" : s.stunde, h].filter { !$0.isEmpty }.joined(separator: " · "))
+                        }
                     }
                     ForEach(p.pausen, id: \.self) { a in
                         Zeile(marke: String(a.pause.prefix(1)) + ". P", farbe: .orange, titel: a.reserve ? "Aufsicht (Reserve)" : "Hofaufsicht", unter: "\(a.pause) · \(a.ort)")
@@ -296,12 +301,44 @@ struct VertretungAnsicht: View {
             } else {
                 Text(kern.vertretungFehler.isEmpty ? "Noch kein Vertretungsplan geladen." : kern.vertretungFehler).foregroundStyle(.secondary)
             }
+            statistik
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Hintergrund(farbton: kern.farbton))
         .navigationTitle("Vertretung")
         .refreshable { await kern.aktualisieren() }
+    }
+
+    /// Nur über mich: wie oft war ich rot (außerplanmäßig) eingeteilt – diesen Monat und dieses Schuljahr
+    @ViewBuilder private var statistik: some View {
+        let s = kern.statistik
+        if !s.tage.isEmpty {
+            let monat = s.zahlen(ab: VertretungsStatistik.monatsBeginn()), jahr = s.zahlen(ab: VertretungsStatistik.schuljahrBeginn())
+            Section {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                    GridRow { Text(""); Text("Monat").font(.caption.weight(.semibold)).foregroundStyle(.secondary); Text("Schuljahr").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+                    statZeile("Vertretungsstunden", monat.vertretungen, jahr.vertretungen, .red)
+                    statZeile("Tage mit Vertretung", monat.rotTage, jahr.rotTage, .red)
+                    statZeile("Begleitungen", monat.begleitungen, jahr.begleitungen, .red)
+                    statZeile("Aufsichten", monat.aufsichten, jahr.aufsichten, .orange)
+                    if jahr.fehlt > 0 { statZeile("Selbst gefehlt", monat.fehlt, jahr.fehlt, .secondary) }
+                    if jahr.ausserHaus > 0 { statZeile("Außer Haus", monat.ausserHaus, jahr.ausserHaus, .secondary) }
+                }
+                if let k = jahr.klasse { LabeledContent("Am öftesten vertreten", value: k) }
+                if let w = jahr.wochentag { LabeledContent("Häufigster Tag", value: ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"][w - 1]) }
+            } header: { Text("Deine Statistik") } footer: {
+                Text("Nur über dich und nur auf diesem Gerät. Gezählt werden die Pläne, die die App geladen hat (\(jahr.tage) Schultage in diesem Schuljahr).")
+            }
+        }
+    }
+
+    private func statZeile(_ t: String, _ m: Int, _ j: Int, _ farbe: Color) -> some View {
+        GridRow {
+            Text(t)
+            Text("\(m)").font(.body.weight(.semibold).monospacedDigit()).foregroundStyle(farbe)
+            Text("\(j)").font(.body.weight(.semibold).monospacedDigit()).foregroundStyle(farbe)
+        }
     }
 
     private func kollege(_ k: String, _ e: MorgenEinstellungen) -> some View {

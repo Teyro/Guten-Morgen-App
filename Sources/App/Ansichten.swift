@@ -6,7 +6,7 @@ import MorgenKern
 /// Verschiebbare, abschaltbare Kacheln auf dem Startbildschirm (Kopf und Knöpfe bleiben fest).
 /// Reihenfolge und Sichtbarkeit regelt MorgenKern.Startseite (testbar).
 enum Kachel: String, CaseIterable, Identifiable {
-    case wecker, schule, mensa, zahlen, schultermine, wetter, termine, post, personal
+    case wecker, schule, mensa, zahlen, schultermine, wetter, termine, post, personal, fussball
     var id: String { rawValue }
     /// DammAPP (Schule): ohne Wecker, Post und Personaldaten
     static func inDieserApp(_ k: Kachel) -> Bool { !Marke.schule || ![.wecker, .post, .personal].contains(k) }
@@ -14,14 +14,14 @@ enum Kachel: String, CaseIterable, Identifiable {
         switch self {
         case .wecker: "Wecker"; case .schule: "Schule (Stunden & Vertretung)"; case .mensa: "Speiseplan"
         case .zahlen: "Abwesend · Störungen · Aufgaben"; case .schultermine: "Schultermine"; case .wetter: "Wetter"
-        case .termine: "Termine & Erinnerungen"; case .post: "Post & Pakete"; case .personal: "Personaldaten (ZPD)"
+        case .termine: "Termine & Erinnerungen"; case .post: "Post & Pakete"; case .personal: "Personaldaten (ZPD)"; case .fussball: "Fußballplatz"
         }
     }
     var symbol: String {
         switch self {
         case .wecker: "alarm.fill"; case .schule: "graduationcap.fill"; case .mensa: "fork.knife"; case .zahlen: "number.square.fill"
         case .schultermine: "calendar.badge.clock"; case .wetter: "cloud.sun.fill"; case .termine: "calendar"; case .post: "shippingbox.fill"
-        case .personal: "person.text.rectangle.fill"
+        case .personal: "person.text.rectangle.fill"; case .fussball: "soccerball"
         }
     }
 }
@@ -59,7 +59,6 @@ struct HauptAnsicht: View {
                         Button { pfad = [.untis] } label: { Label("Stundenpläne suchen", systemImage: "magnifyingglass") }
                         Button { pfad = [.vertretung] } label: { Label("Vertretung", systemImage: "arrow.triangle.swap") }
                         Button { pfad = [.mensa] } label: { Label("Speiseplan", systemImage: "fork.knife") }
-                        Button { pfad = [.fussball] } label: { Label("Fußballplatz", systemImage: "soccerball") }
                         if !Marke.schule { Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") } }
                         Divider()
                         Button { pfad = [.stoerungen] } label: { Label("Störungen", systemImage: "wrench.and.screwdriver.fill") }
@@ -139,6 +138,11 @@ struct HauptAnsicht: View {
         case .wetter: if let w = kern.wetter { WetterKarte(wetter: w) }
         case .termine: termineKarte
         case .post: if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
+        case .fussball: if kern.nextcloudBereit {
+            Button { pfad = [.fussball] } label: {
+                Karte(symbol: "soccerball", farbe: .green, titel: "Fußballplatz") { Text("Pausenbelegung ansehen ›").foregroundStyle(.secondary) }
+            }.buttonStyle(.plain)
+        }
         case .personal: if PersonalZugang.vollstaendig || !PersonalAblage.dateien().isEmpty { PersonalKarte { pfad = [.personal] } }
         }
     }
@@ -959,8 +963,8 @@ struct StundenZeile: View {
     var wetter: PausenWetter? = nil
     private var farbe: Color {
         switch b.art {
-        // Wie in Apples Apps: Reguläres neutral, nur Abweichungen farbig (Vertretung blau, Aufsicht orange)
-        case .vertretung: return .blue
+        // Reguläres neutral, nur Abweichungen farbig: rot = außerplanmäßig (Vertretung, Begleitung), Aufsicht orange
+        case .vertretung: return .red
         case .aufsicht: return .orange
         default: return .gray
         }
@@ -976,7 +980,7 @@ struct StundenZeile: View {
                 .frame(width: 40, height: 40).background(farbe.opacity(0.15), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 if let alt = b.ersetzt {
-                    Text(alt).font(.subheadline).strikethrough(true, color: .secondary).foregroundStyle(.secondary)
+                    Text(alt).font(.subheadline).strikethrough(true, color: .red).foregroundStyle(.secondary)
                 }
                 Text(b.art == .aufsicht ? (b.text.hasPrefix("Reserve") ? "Aufsicht (Reserve) · " : "Hofaufsicht · ") + b.text.replacingOccurrences(of: "Aufsicht ", with: "").replacingOccurrences(of: "Reserve ", with: "") : b.text)
                     .font(.body.weight(.semibold)).foregroundStyle(b.art == .frei || b.art == .pause ? Color.secondary : Color.primary)
