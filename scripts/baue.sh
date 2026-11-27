@@ -33,4 +33,15 @@ cp -R "build/dd/Build/Products/Release-watchos/Guten Morgen.app" build/ipa-uhr/P
 codesign -f -s - "build/ipa-uhr/Payload/GutenMorgen.app/Watch/Guten Morgen.app"
 codesign -f -s - --entitlements ressourcen/App.entitlements build/ipa-uhr/Payload/GutenMorgen.app
 (cd build/ipa-uhr && zip -qry "../GutenMorgen-iOS-mit-Uhr-$VERSION.ipa" Payload)
-echo "Fertig: build/GutenMorgen-iOS-$VERSION.ipa, build/GutenMorgen-iOS-mit-Uhr-$VERSION.ipa"
+# Schul-App DammAPP (ohne Wecker, Post, Home Assistant, Uhr) aus demselben Quellcode
+xcodebuild -project GutenMorgen.xcodeproj -scheme DammAPP -configuration Release -derivedDataPath build/dd -sdk iphoneos -destination generic/platform=iOS \
+  MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$NUMMER" CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation build 2>&1 | tee build/damm.log \
+  | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+grep -q "BUILD SUCCEEDED" build/damm.log || { grep -B2 -A6 "error:" build/damm.log | head -100; exit 1; }
+rm -rf build/ipa-damm && mkdir -p build/ipa-damm/Payload
+cp -R build/dd/Build/Products/Release-iphoneos/DammAPP.app build/ipa-damm/Payload/
+DAPP=build/ipa-damm/Payload/DammAPP.app
+codesign -f -s - --entitlements ressourcen/DammAPP-Widget.entitlements "$DAPP/PlugIns/DammAPPWidget.appex"
+codesign -f -s - --entitlements ressourcen/DammAPP.entitlements "$DAPP"
+(cd build/ipa-damm && zip -qry "../DammAPP-iOS-$VERSION.ipa" Payload)
+echo "Fertig: build/GutenMorgen-iOS-$VERSION.ipa, build/GutenMorgen-iOS-mit-Uhr-$VERSION.ipa, build/DammAPP-iOS-$VERSION.ipa"

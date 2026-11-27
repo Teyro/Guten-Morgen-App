@@ -212,7 +212,7 @@ struct MediathekWahl: View {
             List {
                 if status == .denied || status == .restricted {
                     Section {
-                        Text("DammAPP darf nicht auf deine Mediathek zugreifen.")
+                        Text("GutenMorgen darf nicht auf deine Mediathek zugreifen.")
                         Button("iPhone-Einstellungen öffnen") { if let u = URL(string: UIApplication.openSettingsURLString) { oeffne(u) } }
                     }
                 } else if laedt {

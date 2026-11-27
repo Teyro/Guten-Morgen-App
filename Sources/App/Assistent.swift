@@ -59,7 +59,7 @@ struct EinrichtungsAssistent: View {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     Image(systemName: "graduationcap.fill").font(.system(size: 44)).foregroundStyle(.blue)
-                    Text("Willkommen in der DammAPP").font(.title2.weight(.bold))
+                    Text("Willkommen in der \(Marke.name)").font(.title2.weight(.bold))
                     Text("In ein paar Schritten ist alles eingerichtet: Vertretungsplan, Stundenplan, Mensa, Abwesenheiten und Störungen. Was schon eingetragen ist, bleibt erhalten – du kannst es hier prüfen.")
                         .foregroundStyle(.secondary)
                 }.padding(.vertical, 6)

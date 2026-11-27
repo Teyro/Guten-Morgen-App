@@ -68,7 +68,7 @@ struct SchultagWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "schultag", provider: SchultagZeitleiste()) { e in
             SchultagAnsicht(e: e).containerBackground(for: .widget) { Color.clear }
-                .widgetURL(URL(string: "gutenmorgen://vertretung"))
+                .widgetURL(URL(string: Marke.link("vertretung")))
         }
         .configurationDisplayName("Schultag")
         .description("Was gerade läuft und was danach kommt – mit Restzeit bis zur Pause.")
@@ -108,7 +108,7 @@ struct SchulTagLiveWidget: Widget {
             JetztDanach(bloecke: k.state.bloecke, datum: Date())
                 .padding(14)
                 .activityBackgroundTint(Color.black.opacity(0.35))
-                .widgetURL(URL(string: "gutenmorgen://vertretung"))
+                .widgetURL(URL(string: Marke.link("vertretung")))
         } dynamicIsland: { k in
             let (j, d) = Stundenplan.jetzt(k.state.bloecke, Date())
             return DynamicIsland {

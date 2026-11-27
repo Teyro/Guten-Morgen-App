@@ -123,6 +123,7 @@ final class Kern {
         var gelesen = UserDefaults.standard.string(forKey: "einstellungen").flatMap(MorgenEinstellungen.aus(json:)) ?? MorgenEinstellungen()
         // 2.10: Widget einmalig auf den Apple-Stil (Liquid Glass) – alte Farbverläufe wirkten fremd; Farbe bleibt wählbar
         if !UserDefaults.standard.bool(forKey: "widgetGlas") { gelesen.farbton = "system"; UserDefaults.standard.set(true, forKey: "widgetGlas") }
+        if Marke.schule { gelesen.nurSchule() }   // DammAPP: Persönliches bleibt aus, auch nach einem Import
         einstellungen = gelesen
         token = Schluesselbund.lesen("token") ?? ""
         mensaPasswort = Schluesselbund.lesen("mensa") ?? ""
@@ -593,7 +594,7 @@ final class Kern {
 
     /// Aktuellen Standort als Schule bzw. Zuhause merken
     func ortMerken(schule: Bool) async {
-        guard let l = await ortung.einmal() else { meldung = "Standort nicht verfügbar – Ortungsdienste für DammAPP erlauben."; return }
+        guard let l = await ortung.einmal() else { meldung = "Standort nicht verfügbar – Ortungsdienste für \(Marke.name) erlauben."; return }
         let o = Kontext.Ort(lat: l.coordinate.latitude, lon: l.coordinate.longitude)
         if schule { einstellungen.schulOrt = o } else { einstellungen.zuhauseOrt = o }
         meldung = schule ? "Schule gespeichert" : "Zuhause gespeichert"
@@ -621,7 +622,7 @@ final class Kern {
         let sig = einstellungen.json() + "|" + String(token.suffix(8)) + "|" + String(stabil(geheim.json()))
         guard erzwingen || UserDefaults.standard.string(forKey: "widgetUebergeben") != sig else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            if erzwingen { meldung = "Live-Aktivitäten sind aus – iPhone-Einstellungen → DammAPP → Live-Aktivitäten erlauben." }
+            if erzwingen { meldung = "Live-Aktivitäten sind aus – iPhone-Einstellungen → \(Marke.name) → Live-Aktivitäten erlauben." }
             return
         }
         do {

@@ -38,6 +38,8 @@ struct WeckzeitAbsicht: AppIntent {
 struct MorgenKurzbefehle: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: BriefingAbsicht(), phrases: ["Guten Morgen mit \(.applicationName)", "\(.applicationName) Briefing"], shortTitle: "Briefing", systemImageName: "sun.max.fill")
+        #if !SCHULE
         AppShortcut(intent: GuteNachtAbsicht(), phrases: ["Gute Nacht mit \(.applicationName)"], shortTitle: "Gute Nacht", systemImageName: "moon.stars.fill")
+        #endif
     }
 }

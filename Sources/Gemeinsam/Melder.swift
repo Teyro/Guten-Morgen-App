@@ -16,7 +16,7 @@ enum Melder {
                                                   planDa: planDa, betrifft: betrifft) {
                 g.set(r.datum, forKey: "gemeldetPlanDatum")
                 g.set(r.sig, forKey: "gemeldetVertretung")
-                if let m = r.meldung { melde(id: m.id, titel: m.titel, text: m.text, link: "gutenmorgen://vertretung", dringend: dringend) }
+                if let m = r.meldung { melde(id: m.id, titel: m.titel, text: m.text, link: Marke.link("vertretung"), dringend: dringend) }
             }
         }
         if let s = stoerungen {
@@ -24,7 +24,7 @@ enum Melder {
             let neu = vergleiche(jetzt, schluessel: "gemeldetStoerungen", d)
             for m in s.offen where neu.contains(m.titel + "|" + (m.datum.map { String(Int($0.timeIntervalSince1970)) } ?? "")) {
                 melde(id: "stoerung-\(stabil(m.titel))", titel: "Neue Störung" + (m.ort.isEmpty ? "" : " · \(m.ort)"),
-                      text: m.titel + (m.autor.isEmpty ? "" : " (von \(m.autor))"), link: "gutenmorgen://stoerungen")
+                      text: m.titel + (m.autor.isEmpty ? "" : " (von \(m.autor))"), link: Marke.link("stoerungen"))
             }
             // Zustand geändert: übernommen, anderer Bearbeiter, erledigt
             let zustaende = Dictionary(s.meldungen.map { ($0.titel + "|" + ($0.datum.map { String(Int($0.timeIntervalSince1970)) } ?? ""), $0.zustand) }, uniquingKeysWith: { a, _ in a })
@@ -33,7 +33,7 @@ enum Melder {
                     let k = m.titel + "|" + (m.datum.map { String(Int($0.timeIntervalSince1970)) } ?? "")
                     guard let vorher = alt[k], vorher != m.zustand else { continue }
                     melde(id: "stoerung-\(stabil(k + m.zustand))", titel: m.erledigt ? "Störung erledigt" : "Störung: \(m.zustand)",
-                          text: m.titel + (m.ort.isEmpty ? "" : " · \(m.ort)"), link: "gutenmorgen://stoerungen")
+                          text: m.titel + (m.ort.isEmpty ? "" : " · \(m.ort)"), link: Marke.link("stoerungen"))
                 }
             }
             d.set(zustaende, forKey: "zustandStoerungen")
@@ -43,14 +43,14 @@ enum Melder {
             let neu = vergleiche(jetzt, schluessel: "gemeldetAufgaben", d)
             for x in a.aufgaben where neu.contains("\(x.id)|\(x.kategorie)") {
                 let kat = Aufgaben.kategorien[x.kategorie].name
-                melde(id: "aufgabe-\(x.id)", titel: kat == "Erledigt" ? "Aufgabe erledigt" : "Aufgabe · \(kat)", text: x.titel, link: "gutenmorgen://aufgaben")
+                melde(id: "aufgabe-\(x.id)", titel: kat == "Erledigt" ? "Aufgabe erledigt" : "Aufgabe · \(kat)", text: x.titel, link: Marke.link("aufgaben"))
             }
             // Neue Kommentare an deinen Karten (Anzahl gestiegen)
             let zahlen = Dictionary(a.aufgaben.compactMap { x in x.kommentarAnzahl.map { (x.id, $0) } }, uniquingKeysWith: { a, _ in a })
             if let alt = d.dictionary(forKey: "kommentareAufgaben") as? [String: Int] {
                 for x in a.aufgaben {
                     guard let n = zahlen[x.id], let vorher = alt[x.id], n > vorher else { continue }
-                    melde(id: "kommentar-\(x.id)-\(n)", titel: n - vorher == 1 ? "Neuer Kommentar" : "\(n - vorher) neue Kommentare", text: x.titel, link: "gutenmorgen://aufgaben")
+                    melde(id: "kommentar-\(x.id)-\(n)", titel: n - vorher == 1 ? "Neuer Kommentar" : "\(n - vorher) neue Kommentare", text: x.titel, link: Marke.link("aufgaben"))
                 }
             }
             d.set(zahlen, forKey: "kommentareAufgaben")
@@ -85,7 +85,7 @@ enum Melder {
         let d = UserDefaults.standard
         guard d.string(forKey: "updateGemeldet") != v else { return }
         d.set(v, forKey: "updateGemeldet")
-        melde(id: "update-\(v)", titel: "DammAPP \(v) ist da", text: "Tippen öffnet die neue IPA – in Signulous neu signieren und installieren.",
+        melde(id: "update-\(v)", titel: "\(Marke.name) \(v) ist da", text: "Tippen öffnet die neue IPA – in Signulous neu signieren und installieren.",
               link: "https://github.com/Teyro/Guten-Morgen-App/releases/latest")
     }
 

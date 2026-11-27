@@ -38,7 +38,7 @@ enum AufsichtErinnerung {
             i.title = b.text.hasPrefix("Reserve") ? "Reserve-Aufsicht in 5 Minuten" : "Hofaufsicht in 5 Minuten"
             i.body = "\(b.titel): \(b.text.replacingOccurrences(of: "Aufsicht ", with: "").replacingOccurrences(of: "Reserve ", with: ""))"
             i.sound = .default
-            i.userInfo = ["link": "gutenmorgen://vertretung"]
+            i.userInfo = ["link": Marke.link("vertretung")]
             let z = Zeit.kalender.dateComponents([.year, .month, .day, .hour, .minute], from: b.von.addingTimeInterval(-300))
             try? await c.add(UNNotificationRequest(identifier: "aufsicht-\(Int(b.von.timeIntervalSince1970))", content: i,
                                                    trigger: UNCalendarNotificationTrigger(dateMatching: z, repeats: false)))
@@ -75,7 +75,7 @@ enum Schulalltag {
 
 /// Hintergrund: vor dem Wecken Fahrzeit und Wetter prüfen (früher wecken), im Schulalltag die Live-Aktivität weiterschalten
 enum HintergrundLauf {
-    static let kennung = "de.teyro.gutenmorgen.aktualisieren"
+    static let kennung = (Bundle.main.bundleIdentifier ?? "de.teyro.gutenmorgen") + ".aktualisieren"
 
     @MainActor
     static func anmelden(_ kern: Kern) {

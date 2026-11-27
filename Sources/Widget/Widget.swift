@@ -209,10 +209,11 @@ struct MorgenWidget: Widget {
                 if Farbton.zu(e.farbton).systemGrund { Color(uiColor: .secondarySystemGroupedBackground) }
                 else { LinearGradient(colors: Farbton.zu(e.farbton).widget, startPoint: .topLeading, endPoint: .bottomTrailing) }
             }
-            .widgetURL(URL(string: "gutenmorgen://start"))
+            .widgetURL(URL(string: Marke.link("start")))
         }
-        .configurationDisplayName("DammAPP")
-        .description("Wecker, Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Termine und Post – ab 16 Uhr schon für morgen.")
+        .configurationDisplayName(Marke.name)
+        .description(Marke.schule ? "Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Abwesenheiten und Termine – ab 16 Uhr schon für morgen."
+                     : "Wecker, Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Termine und Post – ab 16 Uhr schon für morgen.")
         #if os(iOS)
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline, .accessoryCircular])
         #endif
@@ -246,12 +247,15 @@ struct MorgenWidgetAnsicht: View {
         } else {
             switch familie {
             #if os(iOS)
-            case .accessoryInline: Text("⏰ \(weckText) \(weckTag)")
+            case .accessoryInline: Text(kopfKurz)
             case .accessoryCircular:
-                VStack(spacing: 0) { Image(systemName: "alarm.fill").font(.caption); Text(weckText).font(.system(size: 13, weight: .bold)).minimumScaleFactor(0.6) }
+                VStack(spacing: 0) {
+                    Image(systemName: Marke.schule ? "graduationcap.fill" : "alarm.fill").font(.caption)
+                    Text(Marke.schule ? (e.schulZeilen.first?.marke ?? "✓") : weckText).font(.system(size: 13, weight: .bold)).minimumScaleFactor(0.6)
+                }
             case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("⏰ \(weckText) \(weckTag)").font(.headline)
+                    Text(Marke.schule ? "🎓 Schule \(e.schulName)" : "⏰ \(weckText) \(weckTag)").font(.headline)
                     if let s = e.schulZeilen.first { Text("\(s.marke) \(s.text)").font(.caption).lineLimit(1) }
                     if let m = e.essen { Text("🍽 \(m)").font(.caption).lineLimit(1) }
                     else if let t = e.termin { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption).lineLimit(1) }
@@ -268,7 +272,7 @@ struct MorgenWidgetAnsicht: View {
 
     /// Ein klar abgegrenzter Kasten mit Kopfzeile; antippen öffnet den Bereich in der App
     private func kasten<I: View>(_ titel: String, _ symbol: String, ziel: String, gleichHoch: Bool = false, @ViewBuilder inhalt: () -> I) -> some View {
-        Link(destination: URL(string: "gutenmorgen://\(ziel)")!) {
+        Link(destination: URL(string: Marke.link(ziel))!) {
             VStack(alignment: .leading, spacing: 3) {
                 Label(titel, systemImage: symbol).font(.system(size: 10, weight: .bold)).textCase(.uppercase).lineLimit(1).minimumScaleFactor(0.7).opacity(0.75)
                 inhalt()
@@ -287,10 +291,21 @@ struct MorgenWidgetAnsicht: View {
         }
     }
 
+    /// Eine Zeile für Sperrbildschirm-Widgets: GutenMorgen der Wecker, DammAPP die erste Schul-Zeile
+    private var kopfKurz: String {
+        Marke.schule ? (e.schulZeilen.first.map { "\($0.marke) \($0.text)" } ?? "🎓 Schule \(e.schulName)") : "⏰ \(weckText) \(weckTag)"
+    }
+
+    /// Kopf groß: GutenMorgen der Wecker, DammAPP (ohne Wecker) der Schultag
     private var weckerBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) { Image(systemName: "alarm.fill"); Text("Wecker \(weckTag)") }.font(.caption.weight(.semibold)).opacity(0.85)
-            Text(weckText).font(.system(size: 38, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
+            if Marke.schule {
+                HStack(spacing: 4) { Image(systemName: "graduationcap.fill"); Text("Schule \(e.schulName)") }.font(.caption.weight(.semibold)).opacity(0.85)
+                Text(Date().formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.wide))).font(.system(size: 30, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
+            } else {
+                HStack(spacing: 4) { Image(systemName: "alarm.fill"); Text("Wecker \(weckTag)") }.font(.caption.weight(.semibold)).opacity(0.85)
+                Text(weckText).font(.system(size: 38, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
+            }
         }
     }
 

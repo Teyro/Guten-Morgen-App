@@ -50,7 +50,7 @@ import MorgenKern
 
     private func melde(_ titel: String, _ text: String) {
         let c = UNMutableNotificationContent(); c.title = titel; c.body = text; c.sound = .default
-        c.userInfo = ["link": "gutenmorgen://personal"]
+        c.userInfo = ["link": Marke.link("personal")]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "gehalt-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
     }
 
@@ -122,7 +122,7 @@ enum GehaltErinnerung {
         inhalt.title = "Gehaltsabrechnung"
         inhalt.body = "Die neue Bezügemitteilung sollte jetzt im Portal sein. Zum Öffnen tippen."
         inhalt.sound = .default
-        inhalt.userInfo = ["link": "gutenmorgen://personal"]
+        inhalt.userInfo = ["link": Marke.link("personal")]
         c.add(UNNotificationRequest(identifier: id, content: inhalt, trigger: UNCalendarNotificationTrigger(dateMatching: comp, repeats: true)))
     }
 }

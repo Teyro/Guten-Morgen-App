@@ -1,4 +1,5 @@
-# Xcode-Projekt für die iPhone-App „Guten Morgen“ und ihr Widget. Erzeugen: xcodegen generate
+# Xcode-Projekt: GutenMorgen (privat: Wecker, Post, Home Assistant, Uhr) und DammAPP (Schule, ohne Persönliches) aus
+# demselben Quellcode – welche App läuft, erkennt der Code an der Bundle-ID (MorgenKern.Marke). Erzeugen: xcodegen generate
 name: GutenMorgen
 options:
   bundleIdPrefix: de.teyro
@@ -80,6 +81,48 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SKIP_INSTALL: YES
+  DammAPP:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/App
+      - path: Sources/Gemeinsam
+      - path: ressourcen/Assets.xcassets
+    dependencies:
+      - package: MorgenKern
+      - target: DammAPPWidget
+        embed: true
+        codeSign: true
+    settings:
+      base:
+        PRODUCT_NAME: DammAPP
+        PRODUCT_BUNDLE_IDENTIFIER: de.teyro.dammapp
+        INFOPLIST_FILE: ressourcen/DammAPP-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: ressourcen/DammAPP.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: SCHULE
+        TARGETED_DEVICE_FAMILY: "1,2"
+  DammAPPWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Sources/Widget
+      - path: Sources/Gemeinsam
+    dependencies:
+      - package: MorgenKern
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_NAME: DammAPPWidget
+        PRODUCT_BUNDLE_IDENTIFIER: de.teyro.dammapp.widget
+        INFOPLIST_FILE: ressourcen/DammAPP-Widget.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: ressourcen/DammAPP-Widget.entitlements
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: SCHULE
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
 schemes:
   GutenMorgen:
     build:
@@ -89,3 +132,7 @@ schemes:
     build:
       targets:
         GutenMorgen-Uhr: all
+  DammAPP:
+    build:
+      targets:
+        DammAPP: all

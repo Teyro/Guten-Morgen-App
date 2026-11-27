@@ -44,6 +44,16 @@ jobs:
               xcrun simctl io "$GERAET" screenshot "bilder-ci/${m}_$a.png"
             done
           done
+          # Schul-App DammAPP: Startseite (ohne Wecker, Post, Home Assistant)
+          xcodebuild -project GutenMorgen.xcodeproj -scheme DammAPP -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          xcrun simctl install "$GERAET" build/sim/Build/Products/Debug-iphonesimulator/DammAPP.app
+          xcrun simctl ui "$GERAET" appearance light
+          for a in heute einstellungen; do
+            SIMCTL_CHILD_GM_ANSICHT=$a xcrun simctl launch --terminate-running-process "$GERAET" de.teyro.dammapp --vorschau
+            sleep 7
+            xcrun simctl io "$GERAET" screenshot "bilder-ci/dammapp_$a.png"
+          done
       - uses: actions/upload-artifact@v5
         if: always()
         with:
@@ -52,7 +62,9 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: app
-          path: build/GutenMorgen-iOS-*.ipa
+          path: |
+            build/GutenMorgen-iOS-*.ipa
+            build/DammAPP-iOS-*.ipa
 
   release:
     name: Release
@@ -68,5 +80,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Guten Morgen ${GITHUB_REF_NAME#v}" --notes "IPA zum Signieren (z. B. mit Signulous)."
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "GutenMorgen + DammAPP ${GITHUB_REF_NAME#v}" --notes "IPAs zum Signieren (z. B. mit Signulous): GutenMorgen (privat) und DammAPP (Schul-App)."
           gh release upload "$GITHUB_REF_NAME" dateien/* --clobber -R "$GITHUB_REPOSITORY"

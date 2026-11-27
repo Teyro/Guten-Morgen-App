@@ -243,11 +243,26 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
 
     public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
     public static func aus(json: String) -> MorgenEinstellungen? { try? JSONDecoder().decode(MorgenEinstellungen.self, from: Data(json.utf8)) }
+
+    /// Schul-App (DammAPP): alles Persönliche aus – Wecker, Home Assistant, Post, Gesundheit, Gehalt, Unterwegs
+    public mutating func nurSchule() {
+        weckerAutomatisch = false; post = false; gesundheit = false; gehaltErinnern = false; gehaltAuto = false
+        haAdresse = ""; nacht = []; morgen = []; routine = []; unterwegsAn = false; nachtlampe = ""; nachtGeschichte = ""; nachtGeschichteKurzbefehl = false
+    }
+}
+
+/// Welche App läuft: GutenMorgen (privat, alles) oder DammAPP (Schule) – erkannt an der Bundle-ID, damit auch MorgenKern es weiß
+public enum Marke {
+    public static let schule = (Bundle.main.bundleIdentifier ?? "").hasPrefix("de.teyro.dammapp")
+    public static let name = schule ? "DammAPP" : "GutenMorgen"
+    /// URL-Schema für Widget-Links und Mitteilungen (zwei Apps auf einem Gerät dürfen sich nicht in die Quere kommen)
+    public static let schema = schule ? "dammapp" : "gutenmorgen"
+    public static func link(_ ziel: String) -> String { "\(schema)://\(ziel)" }
 }
 
 /// Gemeinsame Ablage: App-Gruppe, wenn die Signatur sie erlaubt – sonst die eigene des Widgets (Übergabe per Live-Aktivität)
 public enum MorgenAblage {
-    public static let gruppe = "group.de.teyro.gutenmorgen"
+    public static let gruppe = Marke.schule ? "group.de.teyro.dammapp" : "group.de.teyro.gutenmorgen"
     public static var defaults: UserDefaults { UserDefaults(suiteName: gruppe) ?? .standard }
     public static var gruppeDa: Bool { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: gruppe) != nil }
 

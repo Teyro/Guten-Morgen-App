@@ -8,6 +8,8 @@ import MorgenKern
 enum Kachel: String, CaseIterable, Identifiable {
     case wecker, schule, mensa, zahlen, schultermine, wetter, termine, post, personal
     var id: String { rawValue }
+    /// DammAPP (Schule): ohne Wecker, Post und Personaldaten
+    static func inDieserApp(_ k: Kachel) -> Bool { !Marke.schule || ![.wecker, .post, .personal].contains(k) }
     var name: String {
         switch self {
         case .wecker: "Wecker"; case .schule: "Schule (Stunden & Vertretung)"; case .mensa: "Speiseplan"
@@ -56,13 +58,13 @@ struct HauptAnsicht: View {
                         Button { pfad = [.untis] } label: { Label("Stundenpläne suchen", systemImage: "magnifyingglass") }
                         Button { pfad = [.vertretung] } label: { Label("Vertretung", systemImage: "arrow.triangle.swap") }
                         Button { pfad = [.mensa] } label: { Label("Speiseplan", systemImage: "fork.knife") }
-                        Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") }
+                        if !Marke.schule { Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") } }
                         Divider()
                         Button { pfad = [.stoerungen] } label: { Label("Störungen", systemImage: "wrench.and.screwdriver.fill") }
                         Button { pfad = [.aufgaben] } label: { Label("Aufgaben", systemImage: "checklist") }
                         Button { pfad = [.abwesend] } label: { Label("Abwesenheiten", systemImage: "person.crop.circle.badge.xmark") }
                         Divider()
-                        Button { pfad = [.personal] } label: { Label("Personaldaten", systemImage: "person.text.rectangle") }
+                        if !Marke.schule { Button { pfad = [.personal] } label: { Label("Personaldaten", systemImage: "person.text.rectangle") } }
                         Divider()
                         Button { kern.einstellungenOffen = true } label: { Label("Einstellungen", systemImage: "gearshape") }
                     } label: { Label("Menü", systemImage: "line.3.horizontal") }
@@ -120,7 +122,7 @@ struct HauptAnsicht: View {
     /// Sichtbare Kacheln in Reihenfolge: eigene aus den Einstellungen, sonst automatisch (in der Schule Schule zuerst)
     private var kachelOrdnung: [Kachel] {
         Startseite.ordnung(eigen: kern.einstellungen.kachelReihenfolge, aus: kern.einstellungen.kachelAus, inDerSchule: kern.kontext == .schule)
-            .compactMap(Kachel.init(rawValue:))
+            .compactMap(Kachel.init(rawValue:)).filter(Kachel.inDieserApp)
     }
 
     @ViewBuilder private func kachel(_ k: Kachel) -> some View {
@@ -492,7 +494,7 @@ struct EinstellungenAnsicht: View {
 
     /// Alle Kacheln in aktueller Reihenfolge (auch ausgeschaltete) zum Verschieben und Abschalten
     private var kachelOrdnungEinstellung: [Kachel] {
-        Startseite.vollstaendig(kern.einstellungen.kachelReihenfolge, inDerSchule: kern.kontext == .schule).compactMap(Kachel.init(rawValue:))
+        Startseite.vollstaendig(kern.einstellungen.kachelReihenfolge, inDerSchule: kern.kontext == .schule).compactMap(Kachel.init(rawValue:)).filter(Kachel.inDieserApp)
     }
 
     /// Schalter je Kachel: an = nicht in „kachelAus“
@@ -509,12 +511,12 @@ struct EinstellungenAnsicht: View {
         Form {
             Section {
                 seite("Aussehen und Startseite", "paintbrush.fill", .pink) { aussehen }
-                seite("Wecker und Nacht", "alarm.fill", .orange) { wecker }
+                if !Marke.schule { seite("Wecker und Nacht", "alarm.fill", .orange) { wecker } }
                 seite("Schule", "graduationcap.fill", .blue) { schule }
                 seite("IServ und Edupool", "person.2.fill", .teal) { iserv }
                 seite("Mitteilungen", "bell.badge.fill", .red) { mitteilungen }
-                seite("Zuhause und Unterwegs", "house.fill", .green) { zuhause }
-                seite("Kalender, Watch, Personaldaten", "ellipsis.circle.fill", .gray) { weiteres }
+                if !Marke.schule { seite("Zuhause und Unterwegs", "house.fill", .green) { zuhause } }
+                seite(Marke.schule ? "Kalender" : "Kalender, Watch, Personaldaten", "ellipsis.circle.fill", .gray) { weiteres }
             }
             Section {
                 Button {
@@ -859,6 +861,7 @@ struct EinstellungenAnsicht: View {
                 Toggle("Erinnerungen", isOn: $k.einstellungen.erinnerungen)
             }
 
+            if !Marke.schule {
             Section {
                 Text("Die Apple-Watch-App steckt in der Datei „GutenMorgen-iOS-mit-Uhr“ im Release. Damit installiert, erscheint sie auf der Uhr (Watch-App auf dem iPhone → Verfügbare Apps). Sie zeigt Wecker, was gerade läuft und den Tagesablauf. Die Live-Aktivität erscheint außerdem im Smart Stack der Uhr, und der Wecker klingelt auch dort.").font(.footnote)
             } header: { Text("Apple Watch") }
@@ -882,6 +885,7 @@ struct EinstellungenAnsicht: View {
                         .onChange(of: kern.einstellungen.gehaltTag) { _, _ in GehaltErinnerung.planen(an: true, tag: kern.einstellungen.gehaltTag) }
                 }
             } header: { Text("Personaldaten") } footer: { Text("„Automatisch abrufen“: einmal am Tag (Mo–Fr, zufällig zwischen 11 und 15 Uhr), während die App vorne ist, meldet sie sich still im Portal an und lädt eine neue Abrechnung, falls das Portal eine zeigt. Dein Konto wird nicht laufend abgefragt. Alternativ nur eine monatliche Erinnerung.") }
+            }
     }
 
 }
