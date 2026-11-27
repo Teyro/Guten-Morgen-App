@@ -43,7 +43,7 @@ final class Kern {
     var postFehler = ""
     /// Gerade nicht zu Hause (Schalter „Unterwegs“ und gespeichertes Zuhause)
     var unterwegs = false
-    var geheim: Geheimnisse { Geheimnisse(mensa: mensaPasswort, freigabe: freigabePasswort, iserv: iservPasswort, totp: totpGeheim, edupool: edupoolToken) }
+    var geheim: Geheimnisse { Geheimnisse(mensa: mensaPasswort, freigabe: freigabePasswort, iserv: iservPasswort, totp: totpGeheim, edupool: edupoolToken, matrix: Schluesselbund.lesen("matrix") ?? "") }
 
     // Module aus Mein Tag (nativ): zuletzt geladener Stand bleibt gespeichert (Anzeige sofort, Aufgaben auch offline)
     var abwesend: AbwesenheitenStand? { didSet { merke(abwesend, "abwesendStand") } }
@@ -160,7 +160,7 @@ final class Kern {
 
     var ha: HomeAssistant { HomeAssistant(adresse: einstellungen.haAdresse, token: token) }
 
-    private func speichern() {
+    func speichern() {
         guard !vorschau else { return }
         UserDefaults.standard.set(einstellungen.json(), forKey: "einstellungen")
         if MorgenAblage.gruppeDa { MorgenAblage.speichern(einstellungen, token: token, geheim: geheim) }
@@ -590,6 +590,7 @@ final class Kern {
                            aufgaben: e.mitteilungen && e.aufgaben ? aufgaben : nil,
                            vertretung: vertretung, planDa: e.vertretungDa, betrifft: e.vertretungMelden, dringend: e.vertretungDringend)
         }
+        if e.chatMelden { await Melder.chat(e, geheim: geheim, hier: ortung.ort, frei: frei) }
         GehaltErinnerung.planen(an: e.gehaltErinnern, tag: e.gehaltTag)
         await untisLaden(erzwingen: erzwingen)
         await updateSuchen()

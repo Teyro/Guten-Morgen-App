@@ -29,6 +29,7 @@ import MorgenKern
                         laedt = true
                         let m = try await Matrix.anmelden(benutzer: b, passwort: p)
                         matrix = m; Schluesselbund.speichern(m.ich + "\t" + m.token, "matrix")
+                        kern.speichern(); await kern.widgetUebergeben() // Widget braucht das Token für Mitteilungen
                     }
                     guard let m = matrix else { break }
                     laedt = raeume.isEmpty
@@ -37,6 +38,8 @@ import MorgenKern
                     fehler = ""; laedt = false
                 } catch Matrix.Fehler.anmeldung where matrix != nil {
                     matrix = nil; weiter = ""; Schluesselbund.speichern("", "matrix") // Token abgelaufen → neu anmelden
+                } catch Matrix.Fehler.anmeldung {
+                    fehler = Matrix.Fehler.anmeldung.localizedDescription; break // falsche Daten nicht wiederholen (Kontosperre)
                 } catch is CancellationError { break
                 } catch {
                     if (error as? URLError)?.code == .cancelled { break }
@@ -99,7 +102,7 @@ struct ChatListe: View {
         .animation(.snappy, value: chat.raeume.map(\.id))
         .overlay { if chat.laedt && chat.raeume.isEmpty { ProgressView("Chats laden …") } else if chat.raeume.isEmpty && chat.fehler.isEmpty { ContentUnavailableView("Keine Chats", systemImage: "bubble.left.and.bubble.right") } }
         .navigationTitle("Chat")
-        .onAppear { chat.start(kern) }
+        .onAppear { chat.start(kern); Melder.chatGelesen() }
     }
 
     private func zeile(_ r: Matrix.Raum) -> some View {

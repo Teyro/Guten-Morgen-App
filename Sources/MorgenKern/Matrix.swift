@@ -71,12 +71,24 @@ public struct Matrix: Sendable {
         return j
     }
 
+    /// IServ-Login ist oft die E-Mail (Schuldock-SSO), der Chat kennt meist nur den Namen davor → nacheinander probieren
+    public static func kennungen(_ benutzer: String) -> [[String: String]] {
+        let b = benutzer.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let at = b.firstIndex(of: "@"), !b.hasPrefix("@") else { return [["type": "m.id.user", "user": b]] }
+        return [["type": "m.id.user", "user": String(b[..<at])], ["type": "m.id.thirdparty", "medium": "email", "address": b], ["type": "m.id.user", "user": b]]
+    }
+
     public static func anmelden(benutzer: String, passwort: String) async throws -> Matrix {
-        let j = try await anfrage("/_matrix/client/v3/login", methode: "POST", koerper: [
-            "type": "m.login.password", "identifier": ["type": "m.id.user", "user": benutzer.trimmingCharacters(in: .whitespaces).lowercased()],
-            "password": passwort, "initial_device_display_name": Marke.schule ? "DammAPP" : "GutenMorgen"])
-        guard let t = j["access_token"] as? String, let u = j["user_id"] as? String else { throw Fehler.anmeldung }
-        return Matrix(token: t, ich: u)
+        for k in kennungen(benutzer) {
+            let j: [String: Any]
+            do {
+                j = try await anfrage("/_matrix/client/v3/login", methode: "POST", koerper: [
+                    "type": "m.login.password", "identifier": k,
+                    "password": passwort, "initial_device_display_name": Marke.schule ? "DammAPP" : "GutenMorgen"])
+            } catch Fehler.anmeldung { continue } // nur falsche Kennung → nächste; Netzfehler durchreichen
+            if let t = j["access_token"] as? String, let u = j["user_id"] as? String { return Matrix(token: t, ich: u) }
+        }
+        throw Fehler.anmeldung
     }
 
     /// Ein /sync: [seit] leer = erster Abruf (je Raum die letzten 30 Nachrichten), [warten] ms Long-Poll

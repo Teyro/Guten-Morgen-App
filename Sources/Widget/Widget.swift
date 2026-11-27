@@ -129,6 +129,7 @@ struct MorgenZeitleiste: TimelineProvider {
         var hier: Kontext.Ort?
         let ortung = CLLocationManager()
         if ortung.isAuthorizedForWidgetUpdates, let l = ortung.location { hier = Kontext.Ort(lat: l.coordinate.latitude, lon: l.coordinate.longitude) }
+        if e.chatMelden { await Melder.chat(e, geheim: geheim, hier: hier, frei: frei) }
         let kontext = Kontext.bestimme(jetzt: jetzt, frei: frei, hier: hier, schule: e.schulOrt, zuhause: e.zuhauseOrt)
         let amTag = abw.map { Abwesenheiten.amTag($0.eintraege, ziel: schulTag, klassen: e.klassenListe) }
         let kinder = amTag.map { $0.filter { !Abwesenheiten.ausgegraut($0, e.abwesendAus) }.map { e.sichtschutz ? Abwesenheiten.kurzName($0.name) : $0.name } }

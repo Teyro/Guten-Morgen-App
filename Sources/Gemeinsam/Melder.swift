@@ -57,6 +57,40 @@ enum Melder {
         }
     }
 
+    /// Neue Chat-Nachrichten: in der Schule/unterwegs sofort je Nachricht, zu Hause gesammelt als eine Zusammenfassung am Abend.
+    /// Merkstand in der App-Gruppe; gleiche Nachricht = gleiche Mitteilungs-ID, falls App und Widget beide melden.
+    static func chat(_ e: MorgenEinstellungen, geheim: Geheimnisse, hier: Kontext.Ort?, frei: [FreierTag]) async {
+        let teile = geheim.matrix.split(separator: "\t", maxSplits: 1).map(String.init)
+        guard teile.count == 2 else { return }
+        let g = MorgenAblage.defaults, m = Matrix(token: teile[1], ich: teile[0])
+        guard let j = try? await m.sync(seit: g.string(forKey: "chatWeiter") ?? "") else { return }
+        let erstes = g.string(forKey: "chatWeiter") == nil
+        g.set(j["next_batch"] as? String, forKey: "chatWeiter")
+        var namen = g.dictionary(forKey: "chatNamen") as? [String: String] ?? [:]
+        let neu = ChatMelden.neue(j, ich: m.ich, namen: &namen)
+        g.set(namen, forKey: "chatNamen")
+        guard !erstes, !neu.isEmpty else { return } // beim ersten Mal nur merken
+        if ChatMelden.art(frei: frei, hier: hier, zuhause: e.zuhauseOrt) == .sofort {
+            for n in neu { melde(id: "chat-\(n.id)", titel: n.raum, text: (n.raum == n.absender ? "" : "\(n.absender): ") + n.text, link: Marke.link("chat")) }
+            return
+        }
+        var gesammelt = g.dictionary(forKey: "chatGesammelt") as? [String: Int] ?? [:]
+        for n in neu { gesammelt[n.raum, default: 0] += 1 }
+        g.set(gesammelt, forKey: "chatGesammelt")
+        let z = ChatMelden.zusammenfassung(gesammelt)
+        let c = UNMutableNotificationContent()
+        c.title = z.titel; c.body = z.text; c.sound = .default; c.userInfo = ["link": Marke.link("chat")]; c.threadIdentifier = Marke.link("chat")
+        let k = Zeit.kalender.dateComponents([.year, .month, .day, .hour, .minute], from: ChatMelden.zeitpunkt(e.chatZusammenfassung))
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "chat-zusammenfassung", content: c,
+                                                                              trigger: UNCalendarNotificationTrigger(dateMatching: k, repeats: false)))
+    }
+
+    /// Chat geöffnet: Gesammeltes und die anstehende Zusammenfassung verwerfen
+    static func chatGelesen() {
+        MorgenAblage.defaults.removeObject(forKey: "chatGesammelt")
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["chat-zusammenfassung"])
+    }
+
     /// Was ist neu gegenüber dem letzten Stand? Erster Lauf: nichts (nur merken).
     private static func vergleiche(_ jetzt: [String], schluessel: String, _ d: UserDefaults) -> Set<String> {
         let alt = d.stringArray(forKey: schluessel)

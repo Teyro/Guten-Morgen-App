@@ -805,6 +805,13 @@ struct EinstellungenAnsicht: View {
                 Toggle("Mitteilungen bei neuen Störungen und Aufgaben", isOn: $k.einstellungen.mitteilungen)
                     .onChange(of: kern.einstellungen.mitteilungen) { _, an in if an { Task { _ = await Melder.erlauben(); await kern.widgetUebergeben(erzwingen: true) } } }
             } header: { Text("Mitteilungen") } footer: { Text("Geprüft wird, wenn sich das Widget aktualisiert (mehrmals am Tag, morgens alle 10 Minuten) – dafür muss das Widget auf dem Home-Bildschirm liegen.") }
+            Section {
+                Toggle("Neue Chat-Nachrichten", isOn: $k.einstellungen.chatMelden)
+                    .onChange(of: kern.einstellungen.chatMelden) { _, an in if an { Task { _ = await Melder.erlauben() } } }
+                if kern.einstellungen.chatMelden {
+                    HStack { Text("Zusammenfassung zu Hause um"); Spacer(); TextField("18:00", text: $k.einstellungen.chatZusammenfassung).multilineTextAlignment(.trailing).frame(width: 80) }
+                }
+            } header: { Text("Chat") } footer: { Text("In der Schule und unterwegs kommt jede Nachricht sofort. Zu Hause ist Ruhe – dann kommt abends eine Zusammenfassung. \(Marke.schule ? "Ohne Standort zählt Schultag 6–17 Uhr als Arbeit, sonst als zu Hause." : "„Zu Hause“ = gespeicherter Ort (Zuhause und Unterwegs → Orte); ohne Standort zählt Schultag 6–17 Uhr als Arbeit.") Der Chat muss einmal geöffnet worden sein.") }
     }
 
     @ViewBuilder private var zuhause: some View {

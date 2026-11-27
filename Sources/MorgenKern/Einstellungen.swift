@@ -95,6 +95,9 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     public var aufgabenFarbe = "#76a5af"
     /// Mitteilungen bei neuen Störungsmeldungen und neuen/verschobenen Aufgaben
     public var mitteilungen = false
+    /// Chat-Nachrichten: in der Schule/unterwegs sofort, zu Hause gesammelt um [chatZusammenfassung]
+    public var chatMelden = true
+    public var chatZusammenfassung = "18:00"
     /// Mitteilung, wenn der Vertretungsplan mich betrifft (Vertretung/Aufsicht/fehlend)
     public var vertretungMelden = false
     /// Mitteilung, sobald der Vertretungsplan für den nächsten Schultag da ist
@@ -172,7 +175,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, abwesendAus, nextcloudServer, nextcloudBenutzer, ichName, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
              mitteilungen, vertretungMelden, vertretungDa, vertretungDringend, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
-             untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius
+             untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius, chatMelden, chatZusammenfassung
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -215,6 +218,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         untisSchule = w(.untisSchule, s.untisSchule)
         untisUebernehmen = w(.untisUebernehmen, s.untisUebernehmen); unterwegsAn = w(.unterwegsAn, s.unterwegsAn)
         unterwegsAktionen = w(.unterwegsAktionen, s.unterwegsAktionen); zuhauseRadius = w(.zuhauseRadius, s.zuhauseRadius)
+        chatMelden = w(.chatMelden, s.chatMelden); chatZusammenfassung = w(.chatZusammenfassung, s.chatZusammenfassung)
     }
 
     /// Unterwegs? (nur mit Schalter und gespeichertem Zuhause; ohne Standort: nein)
@@ -290,13 +294,15 @@ public struct Geheimnisse: Codable, Hashable, Sendable {
     public var iserv = ""
     public var totp = ""
     public var edupool = ""
-    public init(mensa: String = "", freigabe: String = "", iserv: String = "", totp: String = "", edupool: String = "") {
-        self.mensa = mensa; self.freigabe = freigabe; self.iserv = iserv; self.totp = totp; self.edupool = edupool
+    /// Chat: „@ich:server\ttoken“
+    public var matrix = ""
+    public init(mensa: String = "", freigabe: String = "", iserv: String = "", totp: String = "", edupool: String = "", matrix: String = "") {
+        self.mensa = mensa; self.freigabe = freigabe; self.iserv = iserv; self.totp = totp; self.edupool = edupool; self.matrix = matrix
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func w(_ k: CodingKeys) -> String { (try? c.decodeIfPresent(String.self, forKey: k)) ?? nil ?? "" }
-        mensa = w(.mensa); freigabe = w(.freigabe); iserv = w(.iserv); totp = w(.totp); edupool = w(.edupool)
+        mensa = w(.mensa); freigabe = w(.freigabe); iserv = w(.iserv); totp = w(.totp); edupool = w(.edupool); matrix = w(.matrix)
     }
     public func json() -> String { (try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}" }
     public static func aus(json: String) -> Geheimnisse? { try? JSONDecoder().decode(Geheimnisse.self, from: Data(json.utf8)) }
