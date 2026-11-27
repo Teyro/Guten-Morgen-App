@@ -353,7 +353,9 @@ public enum Vertretung {
                 let ueber = kopf.filter { $0.von < c.bis && $0.bis > c.von }
                 // Zeile über alle Klassen (Frühbetreuung Mensa) → keine Klasse
                 let klasse = ueber.count >= 4 && ueber.count > kopf.count / 2 ? "" : ueber.count > 1 ? "\(ueber.first!.text)–\(ueber.last!.text)" : (kopf.first { c.mitte >= Double($0.von) && c.mitte < Double($0.bis) }?.text ?? "")
-                if !p.stunden.contains(where: { $0.stunde == titel && $0.klasse == klasse }) { p.stunden.append(.init(stunde: titel, klasse: klasse)) }
+                // Zeile „B“ (Betreuung) bzw. „Maxi“ = 6. Stunde
+                let st = t == "b" || t.hasPrefix("maxi") ? "6" : titel
+                if !p.stunden.contains(where: { $0.stunde == st && $0.klasse == klasse }) { p.stunden.append(.init(stunde: st, klasse: klasse)) }
             }
         }
         return p

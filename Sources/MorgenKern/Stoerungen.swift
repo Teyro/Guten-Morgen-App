@@ -38,7 +38,7 @@ public struct StoerungenStand: Codable, Hashable, Sendable {
 }
 
 public enum Stoerungen {
-    public static let modulKandidaten = ["/iserv/defect", "/iserv/defect/", "/iserv/defects", "/iserv/troubleticket", "/iserv/ticket"]
+    public static let modulKandidaten = ["/iserv/report/", "/iserv/defect", "/iserv/defect/", "/iserv/defects", "/iserv/troubleticket", "/iserv/ticket"]
     public static let modulMuster = "st(ö|oe|&ouml;)rung|defect|trouble|ticket"
     static let erledigtMuster = "erledigt|geschlossen|behoben|gel(ö|oe)st|abgeschlossen|closed|resolved|done|fertig"
     static let unbesetztMuster = "wer mach|niemand|unbearbeitet|^neu$|^offen$|new|open"
@@ -148,6 +148,15 @@ public struct StoerungVerlauf: Sendable {
     }
     public var eintraege: [Eintrag]
     public var formular: Formular?
+    /// Profilbilder aus der Seite: Name → Adresse (lädt mit der IServ-Sitzung)
+    public var avatare: [String: String] = [:]
+    /// Profilbild zu einem Namen (Groß-/Kleinschreibung und „Admin“ egal)
+    public func avatar(_ name: String) -> String? {
+        func n(_ s: String) -> String { s.lowercased().replacingOccurrences(of: #"\badmin\b"#, with: "", options: .regularExpression).split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        let k = n(name)
+        guard !k.isEmpty else { return nil }
+        return avatare.first { n($0.key) == k }?.value
+    }
 }
 
 extension Stoerungen {
@@ -213,18 +222,47 @@ extension Stoerungen {
             if !t.isEmpty { eintraege.append(.init(autor: "", zeit: "", text: String(t.prefix(8000)))) }
         }
         // Ein Block mit mehreren Kommentaren (Sammelbehälter oder ganze Seite): an „Name am 18.11.2026 11:03“ trennen
-        return StoerungVerlauf(eintraege: bereinigen(eintraege.flatMap(aufteilen)), formular: formular)
+        var v = StoerungVerlauf(eintraege: bereinigen(eintraege.flatMap(aufteilen)), formular: formular)
+        v.avatare = avatare(html, von: von)
+        return v
     }
 
     /// Textbausteine der IServ-Seite (Knöpfe, leere Hinweise, Angaben-Spalten), die in Blasen keinen Sinn ergeben – je ganze Zeile
-    static let bausteinMuster = #"(?im)^[ \t]*(?:(?:es\s+(?:gibt|sind)\s+)?(?:noch\s+)?kein(?:e|en)?\s+(?:weitere[nrs]?\s+)?(?:kommentare?|antworten?|text|dateien|anh(?:ä|ae)nge?|beschreibung|nachrichten?)(?:\s+(?:vorhanden|verfügbar|hinzugefügt))?\.?|(?:einen\s+|neuen?\s+)?(?:kommentare?|antwort)\s+(?:hinzufügen|schreiben|verfassen|absenden|abschicken|senden|speichern)|kommentare?(?:\s*\(\d+\))?|antworten|dateien|anh(?:ä|ae)nge?|bearbeiten|l(?:ö|oe)schen|speichern|abbrechen|zur(?:ü|ue)ck|mehr\s+anzeigen|weniger\s+anzeigen|(?:status|raum|ort|ger(?:ä|ae)t|standort|kategorie|priorit(?:ä|ae)t|bearbeiter(?:in)?|zust(?:ä|ae)ndig|gemeldet(?:\s+von)?|erstellt(?:\s+von|\s+am)?|aktualisiert(?:\s+am)?|ge(?:ä|ae)ndert(?:\s+am)?|datum)\s*:.{0,60})[ \t]*$"#
+    static let bausteinMuster = #"(?im)^[ \t]*(?:(?:es\s+(?:gibt|sind|wurden)\s+)?(?:noch\s+)?kein(?:e|en)?\s+(?:weitere[nrs]?\s+)?(?:kommentare?|antworten?|text|dateien|anh(?:ä|ae)nge?|beschreibung|nachrichten?)(?:\s+(?:vorhanden|verfügbar|hinzugefügt|angeh(?:ä|ae)ngt|hochgeladen))?[.!]?|(?:einen\s+|neuen?\s+)?(?:kommentare?|antwort)\s+(?:hinzufügen|schreiben|verfassen|absenden|abschicken|senden|speichern)|kommentare?(?:\s*\(\d+\))?|antworten|dateien|anh(?:ä|ae)nge?|bearbeiten|l(?:ö|oe)schen|speichern|abbrechen|zur(?:ü|ue)ck(?:\s+zur\s+(?:liste|(?:ü|ue)bersicht))?|details\s+zu\b.{0,80}|mehr\s+anzeigen|weniger\s+anzeigen|(?:status|raum|ort|ger(?:ä|ae)t|standort|kategorie|priorit(?:ä|ae)t|bearbeiter(?:in)?|zust(?:ä|ae)ndig|gemeldet(?:\s+von)?|erstellt(?:\s+von|\s+am)?|aktualisiert(?:\s+am)?|ge(?:ä|ae)ndert(?:\s+am)?|datum)\s*:.{0,60})[ \t]*$"#
+
+    /// Profilbilder der Seite: <img> mit „avatar/profil/photo/picture“ in Adresse oder Klasse und Namen in alt/title
+    static func avatare(_ html: String, von: String) -> [String: String] {
+        var m: [String: String] = [:]
+        for tag in HTML.alle(#"(<img\b[^>]*>)"#, html) where tag.range(of: #"avatar|profil|photo|picture|userimage"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            guard let src = HTML.attr(tag, "src"), !src.hasPrefix("data:") else { continue }
+            let name = HTML.nameSchoen(HTML.entities(HTML.attr(tag, "alt") ?? HTML.attr(tag, "title") ?? ""))
+                .replacingOccurrences(of: #"^(?:Profilbild|Avatar|Bild)(?:\s+(?:von|of))?\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
+            guard name.count >= 3, name.contains(" "), m[name] == nil else { continue }
+            m[name] = HTML.absolut(HTML.entities(src), von: von)
+        }
+        return m
+    }
+
+    /// Kopf der Detailseite („Details zu …“, Titel, „Name | 01.10.2026 07:51“, „| Medienproblem |“, „eingereicht“) – steht schon oben
+    static func ohneKopf(_ text: String) -> String {
+        let z = text.components(separatedBy: "\n")
+        guard let i = z.prefix(10).firstIndex(where: { $0.range(of: #"\|\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s+\d{1,2}:\d{2}"#, options: .regularExpression) != nil }) else { return text }
+        var j = i + 1
+        while j < z.count {
+            let s = z[j].trimmingCharacters(in: .whitespaces)
+            let status = s.range(of: #"(?i)^\|?\s*(eingereicht|in arbeit|wer machts\??|erledigt|abgeschlossen|geschlossen|offen|neu|angenommen|abgelehnt|zurückgestellt)\s*\|?$"#, options: .regularExpression) != nil
+            guard s.isEmpty || status || (s.contains("|") && s.count <= 60) else { break }
+            j += 1
+        }
+        return z[j...].joined(separator: "\n")
+    }
 
     /// Textbausteine weg, doppelte Zeilen in einer Blase weg, gleicher Text nur einmal (kurze wie „Danke“ nur je Person)
     static func bereinigen(_ l: [StoerungVerlauf.Eintrag]) -> [StoerungVerlauf.Eintrag] {
         var gesehen = Set<String>(), aus: [StoerungVerlauf.Eintrag] = []
         for var e in l {
             var zeilen: [String] = [], doppelt = Set<String>()
-            for z in e.text.replacingOccurrences(of: bausteinMuster, with: "", options: .regularExpression).components(separatedBy: "\n") {
+            for z in ohneKopf(e.text).replacingOccurrences(of: bausteinMuster, with: "", options: .regularExpression).components(separatedBy: "\n") {
                 let k = z.trimmingCharacters(in: .whitespaces).lowercased()
                 if !k.isEmpty, !doppelt.insert(k).inserted { continue }
                 zeilen.append(z)

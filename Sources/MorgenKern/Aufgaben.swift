@@ -154,18 +154,35 @@ public enum Aufgaben {
         nimm(b["members"] ?? b["users"])
         if let (d, _) = try? await anfrage("/api/boards/\(id)", token: token), let o = d as? [String: Any] { nimm(o["members"] ?? o["users"] ?? o["participants"]) }
         if let (kd, _) = try? await anfrage("/api/cards/board/\(id)", token: token) {
-            for k in liste(kd) { nimm(k["assignees"] ?? k["assigned_users"] ?? k["members"], farbe: k["color"]) }
+            for k in liste(kd) {
+                // Karte je Person: Titel = Name („Christian S.“, „Vivi“), Kartenfarbe = Farbe der Person
+                let f = farbNorm((k["color"] as? String) ?? ""), t = ((k["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !f.isEmpty, t.count <= 25, t.range(of: #"^\p{Lu}[\p{L}.\- ]*$"#, options: .regularExpression) != nil, t.split(separator: " ").count <= 3 { m[t] = "#" + f }
+                nimm(k["assignees"] ?? k["assigned_users"] ?? k["members"], farbe: k["color"])
+            }
         }
         return m
     }
 
-    /// Farbe zu einem Namen: exakt, dann Teil des Namens (z. B. Nachname), sonst nil
+    /// Farbe zu einem Namen nach Vorname (+ Anfang des Nachnamens): „Christian Stake Admin“ → „Christian S.“, „Viviane Haist“ → „Vivi“
     public static func farbe(fuer name: String, in farben: [String: String]) -> String? {
-        let n = name.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !n.isEmpty else { return nil }
-        if let f = farben.first(where: { $0.key.lowercased() == n })?.value { return f }
-        let teile = Set(n.split { !$0.isLetter }.map(String.init).filter { $0.count >= 3 })
-        return farben.first { k, _ in !teile.isDisjoint(with: k.lowercased().split { !$0.isLetter }.map(String.init)) }?.value
+        func woerter(_ s: String) -> [String] { s.lowercased().split { !$0.isLetter }.map(String.init).filter { $0 != "admin" } }
+        let n = woerter(name)
+        guard let vn = n.first else { return nil }
+        var best: (punkte: Int, farbe: String)?
+        for (k, f) in farben.sorted(by: { $0.key < $1.key }) {
+            let t = woerter(k)
+            guard let vk = t.first, vk.count >= 3, vn.hasPrefix(vk) || vk.hasPrefix(vn) else { continue }
+            var punkte = 1
+            if t.count > 1 {
+                // mit Nachname(-Anfang): muss passen, sonst ist es jemand anderes (Christian N. ≠ Christian S.)
+                guard n.count > 1, n[1].hasPrefix(t[1]) || t[1].hasPrefix(n[1]) else { continue }
+                punkte = 2 + t[1].count
+            }
+            if punkte > best?.punkte ?? 0 { best = (punkte, f) }
+        }
+        // Rückfall: voller Nachname („Herr Kurz“ → „Ben Kurz“)
+        return best?.farbe ?? farben.sorted(by: { $0.key < $1.key }).first { k, _ in let t = woerter(k); return t.count > 1 && t.last!.count >= 3 && n.contains(t.last!) }?.value
     }
 
     // MARK: Kommentare (Verlauf einer Karte, antworten braucht beim Verbinden „Schreiben“)

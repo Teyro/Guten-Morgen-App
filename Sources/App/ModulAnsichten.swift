@@ -280,8 +280,15 @@ struct StoerungDetail: View {
         let ich = Stoerungen.istIch(e.autor, benutzer: kern.einstellungen.iservBenutzer, ichName: kern.einstellungen.ichName)
         let technik = ich
         let initialen = e.autor.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
-        let kreis = Text(initialen.isEmpty ? "?" : initialen).font(.caption2.weight(.bold)).foregroundStyle(.white)
+        let zeichen = Text(initialen.isEmpty ? "?" : initialen).font(.caption2.weight(.bold)).foregroundStyle(.white)
             .frame(width: 30, height: 30).background(farbe.gradient, in: Circle())
+        // Profilbild aus IServ (lädt mit den Sitzungs-Cookies), sonst die Initialen
+        let kreis = Group {
+            if let a = verlauf?.avatar(e.autor), let u = URL(string: a) {
+                AsyncImage(url: u) { bild in bild.resizable().scaledToFill() } placeholder: { zeichen }
+                    .frame(width: 30, height: 30).clipShape(Circle()).overlay(Circle().stroke(farbe, lineWidth: 1.5))
+            } else { zeichen }
+        }
         return HStack(alignment: .bottom, spacing: 8) {
             if technik { Spacer(minLength: 48) } else { kreis.opacity(mitName ? 1 : 0) }
             VStack(alignment: technik ? .trailing : .leading, spacing: 3) {
@@ -290,10 +297,10 @@ struct StoerungDetail: View {
                 if let u = uhrzeit(e.zeit) { Text(u).font(.caption2).foregroundStyle(technik ? Color.white.opacity(0.8) : Color.secondary) }
             }
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(technik ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(farbe.opacity(0.22)),
+            .background(technik ? AnyShapeStyle(farbe.gradient) : AnyShapeStyle(farbe.opacity(0.22)),
                         in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: technik ? 18 : 4, bottomTrailingRadius: technik ? 4 : 18, topTrailingRadius: 18, style: .continuous))
             .frame(maxWidth: .infinity, alignment: technik ? .trailing : .leading)
-            if technik { EmptyView() } else { Spacer(minLength: 24) }
+            if technik { kreis.opacity(mitName ? 1 : 0) } else { Spacer(minLength: 24) }
         }
     }
 

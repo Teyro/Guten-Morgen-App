@@ -50,4 +50,35 @@ final class ChatBereinigenTests: XCTestCase {
         ]
         XCTAssertEqual(Stoerungen.bereinigen(l).map(\.text), ["Das Board bleibt schwarz.", "Schaue ich mir morgen an.", "Danke", "Danke"])
     }
+
+    /// Kopf der IServ-Detailseite (Titel, „Name | Datum“, Kategorie, Status) und „Es wurden noch keine Dateien angehängt!“ fliegen raus
+    func testKopfDerDetailseite() {
+        let t = "Details zu Kalendereintrag\nVertretungsplan\nZurück zur Liste\n\nKalendereintrag Vertretungsplan\nKim Muster | 01.10.2026 07:51\n| Medienproblem |\neingereicht\nHallo :)\n\nIch sehe den Kalender nicht.\n\nEs wurden noch keine Dateien angehängt!"
+        XCTAssertEqual(Stoerungen.bereinigen([.init(autor: "Kim Muster", zeit: "", text: t)]).map(\.text), ["Hallo :)\n\nIch sehe den Kalender nicht."])
+    }
+}
+
+final class PersonenFarbenTests: XCTestCase {
+    /// Farben wie auf dem Board „Medien“: Vorname + Anfang des Nachnamens, „Admin“-Konten gleich
+    func testNamenZuordnen() {
+        let f = ["Christian S.": "#76a5af", "Christian N.": "#7aab5c", "Vivi": "#8c7fc2", "Jörn": "#de9a4b"]
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Christian Stake Admin", in: f), "#76a5af")
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Christian Normann", in: f), "#7aab5c")
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Viviane Haist Admin", in: f), "#8c7fc2")
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Jörn Muster", in: f), "#de9a4b")
+        XCTAssertNil(Aufgaben.farbe(fuer: "Sonja Sellmann", in: f))
+        XCTAssertNil(Aufgaben.farbe(fuer: "Christian Xaver", in: f))
+    }
+}
+
+final class AvatarTests: XCTestCase {
+    /// Profilbilder aus der IServ-Seite: Name aus alt/title, „Admin“ egal, Adresse absolut
+    func testAvatareAusSeite() {
+        let html = #"<header><img class="avatar" src="/iserv/core/avatar/user/kim.muster" alt="Kim Muster"></header>"#
+            + #"<div class="comment"><img src="/iserv/profile/picture/lea.beutel?size=32" title="Beutel, Lea"><span class="author">Lea Beutel</span><p>Geht wieder.</p></div><img src="/logo.png" alt="Schule am Damm">"#
+        let v = Stoerungen.verlaufAus(html, von: "https://schule.de/iserv/report/7")
+        XCTAssertEqual(v.avatar("Kim Muster Admin"), "https://schule.de/iserv/core/avatar/user/kim.muster")
+        XCTAssertEqual(v.avatar("Lea Beutel"), "https://schule.de/iserv/profile/picture/lea.beutel?size=32")
+        XCTAssertNil(v.avatar("Schule am Damm"))
+    }
 }
