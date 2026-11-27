@@ -45,27 +45,41 @@ struct MorgenEintrag: TimelineEntry {
     var aufgaben: Int?
     /// Schule zuerst oder (zu Hause, am Wochenende) Termine und Post zuerst
     var kontext: Kontext = .schule
+    /// Eigene feste Stunde, die eine Vertretung/Begleitung ersetzt: Stunde („3“) → „5a Mathe · R12“ (rot durchgestrichen)
+    var ersetzt: [String: String] = [:]
 
-    /// Kurze Schul-Zeilen: „2. Vertretung 2c · Haus 2“, „1.P Aufsicht Hof“, „🍎 Schulobst“
-    var schulZeilen: [(marke: String, text: String)] {
-        var z: [(marke: String, text: String)] = []
+    struct SchulZeile: Hashable {
+        enum Art { case rot, aufsicht, gut, warnung, obst }
+        var marke: String
+        var text: String
+        var art: Art
+        var statt: String? = nil
+    }
+
+    /// Kurze Schul-Zeilen: „2. Vertretung 2c · Haus 2“ (rot = außerplanmäßig), „1.P Aufsicht Hof“, „🍎 Schulobst“
+    var schulZeilen: [SchulZeile] {
+        var z: [SchulZeile] = []
         if let v = vertretung {
-            if v.fehlt { z.append(("⚠️", "Als fehlend eingetragen")) }
+            if v.fehlt { z.append(.init(marke: "!", text: "Als fehlend eingetragen", art: .warnung)) }
+            if v.ausserHaus { z.append(.init(marke: "!", text: "Außer Haus eingetragen", art: .warnung)) }
             for s in v.stunden {
-                let h = Vertretung.haus(s.klasse, haeuser)
-                z.append((Stundenplan.stunde(s.stunde) + ".", VertretungsPlan.titel(s) + (h.isEmpty ? "" : " · \(h)")))
+                let h = Vertretung.haus(s.klasse, haeuser), n = Stundenplan.stunde(s.stunde)
+                z.append(.init(marke: n + ".", text: VertretungsPlan.titel(s) + (h.isEmpty ? "" : " · \(h)"), art: .rot, statt: ersetzt[n]))
             }
             // Begleitungen aus der „Wichtig“-Zeile: „3.–5.  2c → Nelson“
             for b in v.bemerkungen ?? [] where b.was.hasPrefix("Begleitung ") && !b.stunden.isEmpty {
                 let wer = String(b.was.dropFirst("Begleitung ".count))
-                z.append((b.stunden.count > 1 ? "\(b.stunden.first!)–\(b.stunden.last!)" : "\(b.stunden[0]).", b.klasse.isEmpty ? b.was : "\(b.klasse) → \(wer)"))
+                z.append(.init(marke: b.stunden.count > 1 ? "\(b.stunden.first!)–\(b.stunden.last!)" : "\(b.stunden[0]).",
+                               text: b.klasse.isEmpty ? b.was : "\(b.klasse) → \(wer)", art: .rot, statt: ersetzt[String(b.stunden[0])]))
             }
-            for p in v.pausen { z.append((String(p.pause.prefix(1)) + ".P", (p.reserve ? "Reserve " : "Aufsicht ") + p.ort)) }
-            if z.isEmpty { z.append(("✓", "Keine Vertretung")) }
+            for p in v.pausen { z.append(.init(marke: String(p.pause.prefix(1)) + ".P", text: (p.reserve ? "Reserve " : "Aufsicht ") + p.ort, art: .aufsicht)) }
+            if z.isEmpty { z.append(.init(marke: "✓", text: "Alles nach Plan", art: .gut)) }
         }
-        if obst { z.append(("🍎", "Schulobst")) }
+        if obst { z.append(.init(marke: "🍎", text: "Schulobst", art: .obst)) }
         return z
     }
+    /// Wie viel außerplanmäßig (rot) ist
+    var rotZahl: Int { schulZeilen.filter { $0.art == .rot }.count }
     var essen: String? {
         guard let m = mensa else { return nil }
         if let f = m.frei { return "Mensa zu" + (f.isEmpty ? "" : " (\(f))") }
@@ -79,7 +93,8 @@ struct MorgenZeitleiste: TimelineProvider {
         var p = VertretungsPlan(); p.stunden = [.init(stunde: "2", klasse: "2c")]; p.pausen = [.init(pause: "2. Pause", ort: "Hof")]
         return MorgenEintrag(date: Date(), eingerichtet: true, wecker: Weckzeit(minuten: 375, grund: "", tag: Weckzeit.naechsterTag()),
                              wetter: Wetter(jetzt: 6, jetztCode: 2, heute: WetterTag(code: 2, max: 9, min: 3, regen: 10, wind: 10), morgen: nil, stand: Date()),
-                             vertretung: p, mensa: MensaTag(datum: Zeit.iso(Date()), gerichte: [Gericht(menue: "Menü 1", text: "Spaghetti Bolognese")]), obst: true)
+                             vertretung: p, mensa: MensaTag(datum: Zeit.iso(Date()), gerichte: [Gericht(menue: "Menü 1", text: "Spaghetti Bolognese")]), obst: true,
+                             kinder: ["Ben", "Mia"], fehlen: ("2", "abwesend"), stoerungen: 3, aufgaben: 5, ersetzt: ["2": "5a Mathe · R12"])
     }
     func getSnapshot(in context: Context, completion: @escaping (MorgenEintrag) -> Void) { completion(placeholder(in: context)) }
 
@@ -197,264 +212,11 @@ struct MorgenZeitleiste: TimelineProvider {
                              mensa: e.mensa ? mensaPlan?.tag(ziel) : nil, mensaWahl: (e.favoriten, e.meiden), gemerkt: (e.lieblingsGerichte, e.nichtLecker),
                              obst: e.obstBereit && obstTage.contains(ziel), farbton: e.farbton, schulName: Tagwahl.name(schulTag, jetzt: jetzt),
                              kinder: e.abwesenheiten ? kinder : nil, fehlen: e.abwesenheiten ? fehlen : nil, stoerungen: e.stoerungen ? stoe?.offen.count : nil, aufgaben: e.aufgaben ? auf?.offen.count : nil,
-                             kontext: kontext)
+                             kontext: kontext,
+                             ersetzt: Dictionary(e.schultag(schulTag, vertretung: plan).filter { $0.art == .vertretung }.compactMap { b in b.ersetzt.map { (b.name, $0) } }, uniquingKeysWith: { a, _ in a }))
     }
 }
 
-struct MorgenWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "morgen", provider: MorgenZeitleiste()) { e in
-            MorgenWidgetAnsicht(e: e).containerBackground(for: .widget) {
-                // „System (wie Apple)“: neutraler System-Hintergrund wie Apples eigene Widgets (hell/dunkel, Liquid Glass übernimmt iOS)
-                if Farbton.zu(e.farbton).systemGrund { Color(uiColor: .secondarySystemGroupedBackground) }
-                else { LinearGradient(colors: Farbton.zu(e.farbton).widget, startPoint: .topLeading, endPoint: .bottomTrailing) }
-            }
-            .widgetURL(URL(string: Marke.link("start")))
-        }
-        .configurationDisplayName(Marke.name)
-        .description(Marke.schule ? "Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Abwesenheiten und Termine – ab 16 Uhr schon für morgen."
-                     : "Wecker, Wetter, Vertretung, Hofaufsicht, Mensa, Schulobst, Termine und Post – ab 16 Uhr schon für morgen.")
-        #if os(iOS)
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline, .accessoryCircular])
-        #endif
-    }
-}
-
-struct MorgenWidgetAnsicht: View {
-    let e: MorgenEintrag
-    @Environment(\.widgetFamily) private var familie
-    /// Glas-/getönter Home-Bildschirm: iOS nimmt den Hintergrund weg und legt Liquid Glass darunter
-    @Environment(\.widgetRenderingMode) private var darstellung
-
-    var weckText: String { e.wecker?.minuten.map(Zeit.hhmm) ?? "frei" }
-    var weckTag: String {
-        guard let w = e.wecker else { return "" }
-        return Zeit.kalender.isDateInToday(w.tag) ? "heute" : Zeit.kalender.isDateInTomorrow(w.tag) ? "morgen" : Zeit.wochentag(w.tag)
-    }
-    var schulTitel: String { "Schule " + e.schulName }
-    /// Systemfarben (Schrift dunkel/hell je nach Modus) oder weiße Schrift auf kräftigem Farbton
-    var system: Bool { Farbton.zu(e.farbton).systemGrund || darstellung != .fullColor }
-    var schrift: Color { system ? .primary : .white }
-    var kastenGrund: AnyShapeStyle { system ? AnyShapeStyle(Color(uiColor: .tertiarySystemFill)) : AnyShapeStyle(Color.white.opacity(0.14)) }
-    var markeGrund: AnyShapeStyle { system ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(Color.white.opacity(0.22)) }
-
-    var body: some View {
-        if !e.eingerichtet {
-            VStack(spacing: 6) {
-                Image(systemName: "sunrise.fill").font(.title)
-                Text("App öffnen – sie verbindet das Widget").font(.caption).multilineTextAlignment(.center)
-            }.foregroundStyle(schrift)
-        } else {
-            switch familie {
-            #if os(iOS)
-            case .accessoryInline: Text(kopfKurz)
-            case .accessoryCircular:
-                VStack(spacing: 0) {
-                    Image(systemName: Marke.schule ? "graduationcap.fill" : "alarm.fill").font(.caption)
-                    Text(Marke.schule ? (e.schulZeilen.first?.marke ?? "✓") : weckText).font(.system(size: 13, weight: .bold)).minimumScaleFactor(0.6)
-                }
-            case .accessoryRectangular:
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(Marke.schule ? "🎓 Schule \(e.schulName)" : "⏰ \(weckText) \(weckTag)").font(.headline)
-                    if let s = e.schulZeilen.first { Text("\(s.marke) \(s.text)").font(.caption).lineLimit(1) }
-                    if let m = e.essen { Text("🍽 \(m)").font(.caption).lineLimit(1) }
-                    else if let t = e.termin { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption).lineLimit(1) }
-                }
-            #endif
-            case .systemMedium: mittel
-            case .systemLarge, .systemExtraLarge: gross
-            default: klein
-            }
-        }
-    }
-
-    // MARK: Bausteine
-
-    /// Ein klar abgegrenzter Kasten mit Kopfzeile; antippen öffnet den Bereich in der App
-    private func kasten<I: View>(_ titel: String, _ symbol: String, ziel: String, gleichHoch: Bool = false, @ViewBuilder inhalt: () -> I) -> some View {
-        Link(destination: URL(string: Marke.link(ziel))!) {
-            VStack(alignment: .leading, spacing: 3) {
-                Label(titel, systemImage: symbol).font(.system(size: 10, weight: .bold)).textCase(.uppercase).lineLimit(1).minimumScaleFactor(0.7).opacity(0.75)
-                inhalt()
-            }
-            .frame(maxWidth: .infinity, maxHeight: gleichHoch ? .infinity : nil, alignment: .topLeading)
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(kastenGrund, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-    }
-
-    private func schulZeile(_ z: (marke: String, text: String)) -> some View {
-        HStack(spacing: 6) {
-            Text(z.marke).font(.system(size: 11, weight: .bold, design: .rounded)).frame(minWidth: 26, minHeight: 18)
-                .background(markeGrund, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            Text(z.text).font(.caption.weight(.semibold)).lineLimit(1)
-        }
-    }
-
-    /// Eine Zeile für Sperrbildschirm-Widgets: GutenMorgen der Wecker, DammAPP die erste Schul-Zeile
-    private var kopfKurz: String {
-        Marke.schule ? (e.schulZeilen.first.map { "\($0.marke) \($0.text)" } ?? "🎓 Schule \(e.schulName)") : "⏰ \(weckText) \(weckTag)"
-    }
-
-    /// Kopf groß: GutenMorgen der Wecker, DammAPP (ohne Wecker) der Schultag
-    private var weckerBlock: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if Marke.schule {
-                HStack(spacing: 4) { Image(systemName: "graduationcap.fill"); Text("Schule \(e.schulName)") }.font(.caption.weight(.semibold)).opacity(0.85)
-                Text(Date().formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.wide))).font(.system(size: 30, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
-            } else {
-                HStack(spacing: 4) { Image(systemName: "alarm.fill"); Text("Wecker \(weckTag)") }.font(.caption.weight(.semibold)).opacity(0.85)
-                Text(weckText).font(.system(size: 38, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
-            }
-        }
-    }
-
-    @ViewBuilder private var wetterBlock: some View {
-        if let w = e.wetter, let t = w.heute {
-            HStack(spacing: 5) {
-                Image(systemName: Wetter.symbol(w.jetztCode ?? t.code)).symbolRenderingMode(.multicolor)
-                Text("\(Int((w.jetzt ?? t.max).rounded()))°").font(.headline)
-                Text("\(Int(t.min.rounded()))–\(Int(t.max.rounded()))°").font(.caption).opacity(0.85)
-            }
-        }
-    }
-
-    /// Abwesend · Störungen · Aufgaben – je ein gleich großer Kasten (Zahl + eine Zeile), antippen öffnet die Liste
-    private var zahlen: some View {
-        HStack(spacing: 6) {
-            if let k = e.kinder {
-                kasten("Abwesend", "person.crop.circle.badge.xmark", ziel: "abwesend", gleichHoch: true) {
-                    Text(e.fehlen?.zahl ?? "\(k.count)").font(.headline.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
-                    // ab Vertretungsplan: „krank + außer Haus“, sonst die ersten Namen
-                    Text(e.fehlen.map { $0.text.hasPrefix("krank") } == true ? e.fehlen!.text : (k.isEmpty ? "niemand" : k.prefix(2).joined(separator: ", "))).font(.caption2).lineLimit(1).opacity(0.75)
-                }
-            }
-            if let s = e.stoerungen {
-                kasten("Störungen", "wrench.and.screwdriver.fill", ziel: "stoerungen", gleichHoch: true) {
-                    Text("\(s)").font(.headline.monospacedDigit()); Text("offen").font(.caption2).lineLimit(1).opacity(0.75)
-                }
-            }
-            if let a = e.aufgaben {
-                kasten("Aufgaben", "checklist", ziel: "aufgaben", gleichHoch: true) {
-                    Text("\(a)").font(.headline.monospacedDigit()); Text("offen").font(.caption2).lineLimit(1).opacity(0.75)
-                }
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    // MARK: Größen
-
-    private var klein: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            weckerBlock
-            Spacer(minLength: 0)
-            if let z = e.schulZeilen.first { schulZeile(z) } else { wetterBlock }
-        }
-        .foregroundStyle(schrift)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var mittel: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                weckerBlock
-                Spacer(minLength: 0)
-                wetterBlock
-            }
-            .frame(width: 112, alignment: .leading)
-            VStack(spacing: 6) {
-                if e.kontext != .schule {
-                    if let t = e.termin { kasten("Termin", "calendar", ziel: "termine") { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption.weight(.semibold)).lineLimit(2) } }
-                    if !e.post.isEmpty { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(e.termin == nil ? 4 : 2) } }
-                }
-                if e.kontext == .schule || (e.termin == nil && e.post.isEmpty), !e.schulZeilen.isEmpty {
-                    kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(e.essen == nil ? 4 : 2).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
-                }
-                if e.kontext == .schule, let m = e.essen { kasten("Mensa", "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(2) } }
-                if e.kontext == .schule && e.schulZeilen.isEmpty && e.essen == nil {
-                    if let t = e.termin { kasten("Termin", "calendar", ziel: "termine") { Text("\(t.start.uhrzeit) \(t.titel)").font(.caption.weight(.semibold)).lineLimit(2) } }
-                    if !e.post.isEmpty { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(3) } }
-                }
-                Spacer(minLength: 0)
-            }
-        }
-        .foregroundStyle(schrift)
-    }
-
-    private var zahlenDa: Bool { e.kinder != nil || e.stoerungen != nil || e.aufgaben != nil }
-
-    @ViewBuilder private var gross: some View {
-        if e.kontext == .schule { grossSchule } else { grossZuhause }
-    }
-
-    /// Zu Hause und am Wochenende: Termine und Post groß, Schule (für den nächsten Schultag) knapp
-    private var grossZuhause: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top) {
-                weckerBlock
-                Spacer()
-                if let w = e.wetter, let t = w.heute {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Image(systemName: Wetter.symbol(w.jetztCode ?? t.code)).symbolRenderingMode(.multicolor).font(.system(size: 28))
-                        Text("\(Int((w.jetzt ?? t.max).rounded()))°").font(.title3.weight(.bold))
-                    }
-                }
-            }
-            kasten(e.kontext == .frei ? "Termine" : "Termine " + e.schulName, "calendar", ziel: "termine") {
-                if e.heute.isEmpty { Text("Keine Termine").font(.caption).opacity(0.8) }
-                ForEach(Array(e.heute.prefix(4).enumerated()), id: \.offset) { _, t in
-                    HStack(spacing: 8) {
-                        Text(t.ganztags ? "ganzt." : t.start.uhrzeit).font(.caption.monospacedDigit()).opacity(0.85).frame(width: 42, alignment: .leading)
-                        Text(t.titel).font(.caption.weight(.semibold)).lineLimit(1)
-                    }
-                }
-            }
-            if !e.post.isEmpty { kasten("Post & Pakete", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(3) } }
-            if !e.schulZeilen.isEmpty {
-                kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(2).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
-            }
-            if e.kontext != .frei, let m = e.essen { kasten("Mensa " + e.schulName, "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(1) } }
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(schrift)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var grossSchule: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top) {
-                weckerBlock
-                Spacer()
-                if let w = e.wetter, let t = w.heute {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Image(systemName: Wetter.symbol(w.jetztCode ?? t.code)).symbolRenderingMode(.multicolor).font(.system(size: 28))
-                        Text("\(Int((w.jetzt ?? t.max).rounded()))°").font(.title3.weight(.bold))
-                        Text("\(Int(t.min.rounded()))–\(Int(t.max.rounded()))° · ☂︎ \(t.regen) %").font(.caption2).opacity(0.85)
-                    }
-                }
-            }
-            if !e.schulZeilen.isEmpty {
-                kasten(schulTitel, "graduationcap.fill", ziel: "vertretung") { ForEach(Array(e.schulZeilen.prefix(zahlenDa ? 3 : 4).enumerated()), id: \.offset) { _, z in schulZeile(z) } }
-            }
-            if let m = e.essen { kasten("Mensa " + e.schulName, "fork.knife", ziel: "mensa") { Text(m).font(.caption.weight(.semibold)).lineLimit(2) } }
-            if zahlenDa { zahlen }
-            kasten("Termine " + e.schulName, "calendar", ziel: "termine") {
-                if e.heute.isEmpty { Text("Keine Termine").font(.caption).opacity(0.8) }
-                ForEach(Array(e.heute.prefix(zahlenDa ? 2 : 3).enumerated()), id: \.offset) { _, t in
-                    HStack(spacing: 8) {
-                        Text(t.ganztags ? "ganzt." : t.start.uhrzeit).font(.caption.monospacedDigit()).opacity(0.85).frame(width: 42, alignment: .leading)
-                        Text(t.titel).font(.caption.weight(.semibold)).lineLimit(1)
-                    }
-                }
-            }
-            if !e.post.isEmpty && !zahlenDa { kasten("Post", "shippingbox.fill", ziel: "post") { Text(e.post).font(.caption).lineLimit(2) } }
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(schrift)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
 
 #if os(iOS)
 /// Die kurze Live-Aktivität beim Verbinden: übernimmt beim Zeichnen Einstellungen und Token
