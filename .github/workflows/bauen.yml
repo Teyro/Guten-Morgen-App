@@ -38,7 +38,7 @@ jobs:
           mkdir -p bilder-ci
           for m in light dark; do
             xcrun simctl ui "$GERAET" appearance $m
-            for a in heute einstellungen stoerungen; do
+            for a in heute einstellungen stoerungen widget; do
               SIMCTL_CHILD_GM_ANSICHT=$a xcrun simctl launch --terminate-running-process "$GERAET" de.teyro.gutenmorgen --vorschau
               sleep 7
               xcrun simctl io "$GERAET" screenshot "bilder-ci/${m}_$a.png"
@@ -49,11 +49,15 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           xcrun simctl install "$GERAET" build/sim/Build/Products/Debug-iphonesimulator/DammAPP.app
           xcrun simctl ui "$GERAET" appearance light
-          for a in heute einstellungen; do
+          for a in heute einstellungen widget; do
             SIMCTL_CHILD_GM_ANSICHT=$a xcrun simctl launch --terminate-running-process "$GERAET" de.teyro.dammapp --vorschau
             sleep 7
             xcrun simctl io "$GERAET" screenshot "bilder-ci/dammapp_$a.png"
           done
+          xcrun simctl ui "$GERAET" appearance dark
+          SIMCTL_CHILD_GM_ANSICHT=widget xcrun simctl launch --terminate-running-process "$GERAET" de.teyro.dammapp --vorschau
+          sleep 7
+          xcrun simctl io "$GERAET" screenshot "bilder-ci/dammapp_widget_dunkel.png"
       - uses: actions/upload-artifact@v5
         if: always()
         with:

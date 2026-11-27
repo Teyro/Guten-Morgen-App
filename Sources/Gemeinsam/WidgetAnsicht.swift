@@ -2,25 +2,6 @@ import WidgetKit
 import SwiftUI
 import MorgenKern
 
-/// Das Haupt-Widget in Liquid Glass: gläserne Karten und Knöpfe (heller Lichtrand, durchscheinend), klare Typo wie Apples Widgets.
-/// Rot = außerplanmäßig (Vertretung, Begleitung), Orange = Aufsicht, Grün = alles nach Plan.
-/// Klein · Mittel · Groß · Extragroß (iPad) und Sperrbildschirm. Getönt/klar übernimmt iOS das Glas selbst.
-struct MorgenWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "morgen", provider: MorgenZeitleiste()) { e in
-            MorgenWidgetAnsicht(e: e)
-                .containerBackground(for: .widget) { WidgetGrund(farbton: Farbton.zu(e.farbton)) }
-                .widgetURL(URL(string: Marke.link("start")))
-        }
-        .configurationDisplayName(Marke.name)
-        .description(Marke.schule ? "Dein Schultag in Liquid Glass: Vertretung (rot), Aufsicht, Mensa, Abwesenheiten und Termine – ab 16 Uhr schon für morgen."
-                     : "Wecker, Wetter, Schultag, Mensa, Termine und Post in Liquid Glass – ab 16 Uhr schon für morgen.")
-        #if os(iOS)
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge, .accessoryRectangular, .accessoryInline, .accessoryCircular])
-        #endif
-    }
-}
-
 /// Hintergrund: „Liquid Glass (wie Apple)“ = ruhiger Systemgrund mit weichem Licht, sonst der Farbverlauf mit Glanz oben links
 struct WidgetGrund: View {
     let farbton: Farbton
@@ -41,6 +22,8 @@ struct WidgetGrund: View {
 
 struct MorgenWidgetAnsicht: View {
     let e: MorgenEintrag
+    /// Nur für die Vorschau in der App (außerhalb eines Widgets gibt es keine Familie)
+    var familieVorgabe: WidgetFamily? = nil
     @Environment(\.widgetFamily) private var familie
     @Environment(\.widgetRenderingMode) private var darstellung
     @Environment(\.colorScheme) private var modus
@@ -79,7 +62,7 @@ struct MorgenWidgetAnsicht: View {
             }
             .foregroundStyle(schrift)
         } else {
-            switch familie {
+            switch familieVorgabe ?? familie {
             #if os(iOS)
             case .accessoryInline: Text(kopfKurz)
             case .accessoryCircular: rundSperre
