@@ -205,10 +205,12 @@ extension Stoerungen {
         let ns = ohneFormulare as NSString
         let starts = HTML.alleI(eintragMuster, ohneFormulare).map(\.range.location)
         var eintraege: [StoerungVerlauf.Eintrag] = []
+        var bilder: [String: String] = [:]
         for (n, start) in starts.enumerated() {
             let ende = n + 1 < starts.count ? starts[n + 1] : min(ns.length, start + 6000)
             let block = ns.substring(with: NSRange(location: start, length: max(0, ende - start)))
             let autor = HTML.text(HTML.erster(#"class=["'][^"']*\b(?:author|autor|user|username|name|creator)\b[^"']*["'][^>]*>([\s\S]*?)</"#, block) ?? "")
+            if !autor.isEmpty, bilder[HTML.nameSchoen(autor)] == nil, let b = bildIn(block, von: von) { bilder[HTML.nameSchoen(autor)] = b }
             let zeit = HTML.text(HTML.erster(#"<time\b[^>]*>([\s\S]*?)</time>"#, block) ?? HTML.erster(#"(\d{1,2}\.\d{1,2}\.\d{2,4}(?:,?\s*\d{1,2}:\d{2})?)"#, block) ?? "")
             var text = absatzText(block)
             for weg in [autor, zeit] where !weg.isEmpty { text = text.replacingOccurrences(of: weg, with: "") }
@@ -223,12 +225,21 @@ extension Stoerungen {
         }
         // Ein Block mit mehreren Kommentaren (Sammelbehälter oder ganze Seite): an „Name am 18.11.2026 11:03“ trennen
         var v = StoerungVerlauf(eintraege: bereinigen(eintraege.flatMap(aufteilen)), formular: formular)
-        v.avatare = avatare(html, von: von)
+        v.avatare = avatare(html, von: von).merging(bilder) { benannt, _ in benannt }
         return v
     }
 
     /// Textbausteine der IServ-Seite (Knöpfe, leere Hinweise, Angaben-Spalten), die in Blasen keinen Sinn ergeben – je ganze Zeile
     static let bausteinMuster = #"(?im)^[ \t]*(?:(?:es\s+(?:gibt|sind|wurden)\s+)?(?:noch\s+)?kein(?:e|en)?\s+(?:weitere[nrs]?\s+)?(?:kommentare?|antworten?|text|dateien|anh(?:ä|ae)nge?|beschreibung|nachrichten?)(?:\s+(?:vorhanden|verfügbar|hinzugefügt|angeh(?:ä|ae)ngt|hochgeladen))?[.!]?|(?:einen\s+|neuen?\s+)?(?:kommentare?|antwort)\s+(?:hinzufügen|schreiben|verfassen|absenden|abschicken|senden|speichern)|kommentare?(?:\s*\(\d+\))?|antworten|dateien|anh(?:ä|ae)nge?|bearbeiten|l(?:ö|oe)schen|speichern|abbrechen|zur(?:ü|ue)ck(?:\s+zur\s+(?:liste|(?:ü|ue)bersicht))?|details\s+zu\b.{0,80}|mehr\s+anzeigen|weniger\s+anzeigen|(?:status|raum|ort|ger(?:ä|ae)t|standort|kategorie|priorit(?:ä|ae)t|bearbeiter(?:in)?|zust(?:ä|ae)ndig|gemeldet(?:\s+von)?|erstellt(?:\s+von|\s+am)?|aktualisiert(?:\s+am)?|ge(?:ä|ae)ndert(?:\s+am)?|datum)\s*:.{0,60})[ \t]*$"#
+
+    /// Erstes Profilbild in einem Beitrag: <img> oder Hintergrundbild eines Elements mit „avatar/profil/photo/picture“
+    static func bildIn(_ block: String, von: String) -> String? {
+        for tag in HTML.alle(#"(<(?:img\b|[a-z]+\b[^>]*background-image)[^>]*>)"#, block) where tag.range(of: #"avatar|profil|photo|picture|userimage"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            let src = HTML.attr(tag, "src") ?? HTML.erster(#"url\(\s*['"]?([^'")\s]+)"#, HTML.entities(tag))
+            if let s = src, !s.hasPrefix("data:") { return HTML.absolut(HTML.entities(s), von: von) }
+        }
+        return nil
+    }
 
     /// Profilbilder der Seite: <img> mit „avatar/profil/photo/picture“ in Adresse oder Klasse und Namen in alt/title
     static func avatare(_ html: String, von: String) -> [String: String] {

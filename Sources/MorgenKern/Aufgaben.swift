@@ -137,12 +137,15 @@ public enum Aufgaben {
 
     // MARK: Farben der Personen (Board „Medien“)
 
+    /// Kartenfarben des Boards „Medien“ (Stand 27.11.2026) – gelten, bis Edupool selbst Farben liefert
+    public static let medienVorgabe = ["Christian S.": "#80a4ae", "Vivi": "#8b7dbe", "Christian N.": "#79a75a", "Jörn": "#db954b", "Michelle": "#7ba7d8"]
+
     /// Wer welche Farbe hat – aus dem Board „Medien“: Mitglieder mit Farbe, sonst die Farbe der Karten, denen jemand zugewiesen ist.
     /// Liefert die Schnittstelle dazu nichts, bleibt die Liste leer (dann gelten die Farben aus den Einstellungen).
     public static func personenFarben(token: String, board titel: String = "Medien") async -> [String: String] {
         guard let (bd, _) = try? await anfrage("/api/boards", token: token) else { return [:] }
         guard let b = liste(bd).first(where: { (($0["title"] ?? $0["name"]) as? String)?.localizedCaseInsensitiveContains(titel) == true }), let id = b["id"] else { return [:] }
-        var m: [String: String] = [:]
+        var m: [String: String] = [:], karten: [String: String] = [:]
         func nimm(_ personen: Any?, farbe: Any? = nil) {
             for p in personen as? [[String: Any]] ?? [] {
                 let u = (p["user"] as? [String: Any]) ?? p
@@ -157,11 +160,12 @@ public enum Aufgaben {
             for k in liste(kd) {
                 // Karte je Person: Titel = Name („Christian S.“, „Vivi“), Kartenfarbe = Farbe der Person
                 let f = farbNorm((k["color"] as? String) ?? ""), t = ((k["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !f.isEmpty, t.count <= 25, t.range(of: #"^\p{Lu}[\p{L}.\- ]*$"#, options: .regularExpression) != nil, t.split(separator: " ").count <= 3 { m[t] = "#" + f }
+                if !f.isEmpty, t.count <= 25, t.range(of: #"^\p{Lu}[\p{L}.\- ]*$"#, options: .regularExpression) != nil, t.split(separator: " ").count <= 3 { karten[t] = "#" + f }
                 nimm(k["assignees"] ?? k["assigned_users"] ?? k["members"], farbe: k["color"])
             }
         }
-        return m
+        // Personen-Karten sind die Farben, die alle sehen – Mitglieds-/Zuweisungsfarben nur, wenn es keine gibt
+        return karten.isEmpty ? m : karten
     }
 
     /// Farbe zu einem Namen nach Vorname (+ Anfang des Nachnamens): „Christian Stake Admin“ → „Christian S.“, „Viviane Haist“ → „Vivi“

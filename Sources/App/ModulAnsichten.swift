@@ -176,6 +176,7 @@ struct KleinesSymbol: LabelStyle {
 struct StoerungDetail: View {
     let kern: Kern
     let m: Stoerung
+    @Environment(\.colorScheme) private var schema
     @State private var verlauf: StoerungVerlauf?
     @State private var fehler = ""
     @State private var antwort = ""
@@ -217,7 +218,7 @@ struct StoerungDetail: View {
                         if let v = verlauf {
                             if v.eintraege.isEmpty { Text("Noch keine Antworten.").foregroundStyle(.secondary) }
                             let liste = nachrichten(v.eintraege)
-                            let farben = Self.farben(liste, kern.personenFarben)
+                            let farben = Self.farben(liste, Aufgaben.medienVorgabe.merging(kern.personenFarben) { $1 })
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(liste.enumerated()), id: \.offset) { i, e in
                                     let vorher = i > 0 ? liste[i - 1] : nil
@@ -292,12 +293,12 @@ struct StoerungDetail: View {
         return HStack(alignment: .bottom, spacing: 8) {
             if technik { Spacer(minLength: 48) } else { kreis.opacity(mitName ? 1 : 0) }
             VStack(alignment: technik ? .trailing : .leading, spacing: 3) {
-                if mitName && !technik && !e.autor.isEmpty { Text(e.autor).font(.caption.weight(.semibold)).foregroundStyle(farbe) }
-                Text(e.text).font(.callout).foregroundStyle(technik ? Color.white : Color.primary).textSelection(.enabled)
-                if let u = uhrzeit(e.zeit) { Text(u).font(.caption2).foregroundStyle(technik ? Color.white.opacity(0.8) : Color.secondary) }
+                if mitName && !technik && !e.autor.isEmpty { Text(e.autor).font(.caption.weight(.semibold)).foregroundStyle(Color.primary.opacity(0.7)) }
+                Text(e.text).font(.callout).foregroundStyle(Color.primary).textSelection(.enabled)
+                if let u = uhrzeit(e.zeit) { Text(u).font(.caption2).foregroundStyle(Color.secondary) }
             }
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(technik ? AnyShapeStyle(farbe.gradient) : AnyShapeStyle(farbe.opacity(0.22)),
+            .background(farbe.opacity(schema == .dark ? 0.5 : 1), // Kartenfarbe aus „Medien“; dunkel gedämpft, damit die helle Schrift lesbar bleibt
                         in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: technik ? 18 : 4, bottomTrailingRadius: technik ? 4 : 18, topTrailingRadius: 18, style: .continuous))
             .frame(maxWidth: .infinity, alignment: technik ? .trailing : .leading)
             if technik { kreis.opacity(mitName ? 1 : 0) } else { Spacer(minLength: 24) }
@@ -326,7 +327,8 @@ struct StoerungDetail: View {
         return aus
     }
 
-    static let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown, .mint, .cyan]
+    // weiche Kartenfarben wie in Edupool (dunkle Schrift bleibt lesbar)
+    static let palette: [Color] = ["#e6837b", "#e3b94f", "#5fb58a", "#b38ac4", "#e889b5", "#6fb8b3", "#8f9bd6", "#b89b7a", "#a3c46b", "#78b9d9"].map(FarbWahl.farbe)
     static func hash(_ s: String) -> UInt32 { s.lowercased().unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value } }
 
     /// Feste Farbe aus dem Namen (gleicher Name = gleiche Farbe)

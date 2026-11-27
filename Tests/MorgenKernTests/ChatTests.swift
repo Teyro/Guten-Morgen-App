@@ -68,6 +68,12 @@ final class PersonenFarbenTests: XCTestCase {
         XCTAssertEqual(Aufgaben.farbe(fuer: "Jörn Muster", in: f), "#de9a4b")
         XCTAssertNil(Aufgaben.farbe(fuer: "Sonja Sellmann", in: f))
         XCTAssertNil(Aufgaben.farbe(fuer: "Christian Xaver", in: f))
+        // Vorgabe aus dem Board „Medien“
+        let m = Aufgaben.medienVorgabe
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Christian Stake", in: m), "#80a4ae")
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Christian Normann Admin", in: m), "#79a75a")
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Viviane Haist", in: m), "#8b7dbe")
+        XCTAssertEqual(Aufgaben.farbe(fuer: "Michelle Muster", in: m), "#7ba7d8")
     }
 }
 
@@ -80,5 +86,11 @@ final class AvatarTests: XCTestCase {
         XCTAssertEqual(v.avatar("Kim Muster Admin"), "https://schule.de/iserv/core/avatar/user/kim.muster")
         XCTAssertEqual(v.avatar("Lea Beutel"), "https://schule.de/iserv/profile/picture/lea.beutel?size=32")
         XCTAssertNil(v.avatar("Schule am Damm"))
+    }
+
+    /// Ohne Namen am Bild: Profilbild (auch als Hintergrundbild) im Beitrag gehört zur Person des Beitrags
+    func testAvatarImBeitrag() {
+        let html = #"<div class='comment'><span class='avatar' style='background-image: url(&quot;/iserv/core/avatar/user/lea.beutel&quot;)'></span><span class='author'>Lea Beutel</span><p>Geht wieder.</p></div>"#
+        XCTAssertEqual(Stoerungen.verlaufAus(html, von: "https://schule.de/iserv/report/7").avatar("Lea Beutel"), "https://schule.de/iserv/core/avatar/user/lea.beutel")
     }
 }

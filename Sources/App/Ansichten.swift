@@ -59,6 +59,7 @@ struct HauptAnsicht: View {
                         Button { pfad = [.untis] } label: { Label("Stundenpläne suchen", systemImage: "magnifyingglass") }
                         Button { pfad = [.vertretung] } label: { Label("Vertretung", systemImage: "arrow.triangle.swap") }
                         Button { pfad = [.mensa] } label: { Label("Speiseplan", systemImage: "fork.knife") }
+                        Button { pfad = [.fussball] } label: { Label("Fußballplatz", systemImage: "soccerball") }
                         if !Marke.schule { Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") } }
                         Divider()
                         Button { pfad = [.stoerungen] } label: { Label("Störungen", systemImage: "wrench.and.screwdriver.fill") }
@@ -138,11 +139,9 @@ struct HauptAnsicht: View {
         case .wetter: if let w = kern.wetter { WetterKarte(wetter: w) }
         case .termine: termineKarte
         case .post: if !kern.post.isEmpty { Karte(symbol: "shippingbox.fill", farbe: .blue, titel: "Post & Pakete") { Text(kern.post) } }
-        case .fussball: if kern.nextcloudBereit {
-            Button { pfad = [.fussball] } label: {
+        case .fussball: Button { pfad = [.fussball] } label: {
                 Karte(symbol: "soccerball", farbe: .green, titel: "Fußballplatz") { Text("Pausenbelegung ansehen ›").foregroundStyle(.secondary) }
-            }.buttonStyle(.plain)
-        }
+        }.buttonStyle(.plain)
         case .personal: if PersonalZugang.vollstaendig || !PersonalAblage.dateien().isEmpty { PersonalKarte { pfad = [.personal] } }
         }
     }
