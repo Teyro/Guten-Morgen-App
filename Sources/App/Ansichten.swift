@@ -526,7 +526,7 @@ struct EinstellungenAnsicht: View {
             }
             Section("Über") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
-                Link("Guten Morgen auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
+                Link("Quellcode auf GitHub", destination: URL(string: "https://github.com/Teyro/Guten-Morgen-App")!)
             }
         }
         .scrollContentBackground(.hidden)
