@@ -82,7 +82,7 @@ struct MorgenWidgetAnsicht: View {
     private func glas<S: Shape>(_ form: S, farbe: Color? = nil) -> some View {
         ZStack {
             if let f = farbe, voll {
-                form.fill(f.opacity(hell ? 0.16 : 0.32))
+                form.fill(f.opacity(hell ? 0.16 : 0.85))
             } else {
                 form.fill(hell ? AnyShapeStyle(Color.primary.opacity(modus == .dark ? 0.08 : 0.045)) : AnyShapeStyle(Color.white.opacity(voll ? 0.14 : 0.1)))
             }
@@ -133,7 +133,7 @@ struct MorgenWidgetAnsicht: View {
     /// Eine Schul-Zeile: farbige Glasmarke (rot = außerplanmäßig), Text, darüber die ersetzte eigene Stunde rot durchgestrichen
     private func zeile(_ z: MorgenEintrag.SchulZeile, statt: Bool = true) -> some View {
         HStack(spacing: 7) {
-            Text(z.marke).font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(voll ? farbe(z.art) : schrift)
+            Text(z.marke).font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(voll && hell ? farbe(z.art) : .white)
                 .lineLimit(1).minimumScaleFactor(0.6)
                 .frame(minWidth: 28, minHeight: 20).padding(.horizontal, 2)
                 .background(glas(RoundedRectangle(cornerRadius: 7, style: .continuous), farbe: farbe(z.art)))
@@ -154,11 +154,11 @@ struct MorgenWidgetAnsicht: View {
     private func kopf(gross: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if Marke.schule {
-                Label("Schule \(e.schulName)", systemImage: "graduationcap.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(leise).lineLimit(1)
+                Label(gross ? "Schule \(e.schulName)" : e.schulName.capitalized, systemImage: "graduationcap.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(leise).lineLimit(1)
                 Text(wochentag).font(.system(size: gross ? 30 : 24, weight: .bold, design: .rounded)).foregroundStyle(schrift).minimumScaleFactor(0.6).lineLimit(1)
                 if gross { Text(datum).font(.caption.weight(.medium)).foregroundStyle(leise) }
             } else {
-                Label("Wecker \(weckTag)", systemImage: "alarm.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(leise).lineLimit(1)
+                Label(gross ? "Wecker \(weckTag)" : weckTag.capitalized, systemImage: "alarm.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(leise).lineLimit(1)
                 Text(weckText).font(.system(size: gross ? 40 : 32, weight: .bold, design: .rounded)).foregroundStyle(schrift).minimumScaleFactor(0.6).lineLimit(1)
                     .contentTransition(.numericText())
             }
@@ -195,12 +195,19 @@ struct MorgenWidgetAnsicht: View {
 
     // MARK: Teile
 
-    private func schulKarte(_ max: Int, hoch: Bool = false) -> some View {
+    /// [mitMensa]: das Essen als letzte Zeile (spart im großen Widget eine eigene Karte)
+    private func schulKarte(_ max: Int, hoch: Bool = false, mitMensa: Bool = false) -> some View {
         karte("Schule " + e.schulName, "graduationcap.fill", ziel: "vertretung", akzent: e.rotZahl > 0 ? rot : nil, hoch: hoch) {
             let z = e.schulZeilen
             if z.isEmpty { Text("Noch kein Vertretungsplan").font(.caption).foregroundStyle(leise) }
             ForEach(Array(z.prefix(max).enumerated()), id: \.offset) { _, x in zeile(x) }
             if z.count > max { Text("+ \(z.count - max) weitere").font(.system(size: 10, weight: .medium)).foregroundStyle(leise) }
+            if mitMensa, let m = e.essen {
+                HStack(spacing: 7) {
+                    Image(systemName: "fork.knife").font(.system(size: 10, weight: .bold)).foregroundStyle(voll ? gruen : schrift).frame(width: 32)
+                    Text(m).font(.system(size: 12, weight: .semibold)).foregroundStyle(schrift).lineLimit(1)
+                }
+            }
         }
     }
 
@@ -300,11 +307,13 @@ struct MorgenWidgetAnsicht: View {
     }
 
     @ViewBuilder private var gross: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) { kopf(gross: true); Spacer(); VStack(alignment: .trailing, spacing: 6) { wetter(gross: true); if Marke.schule || e.kontext == .schule { zustand } } }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                kopf(gross: true); Spacer()
+                VStack(alignment: .trailing, spacing: 0) { wetter(gross: false); if Marke.schule || e.kontext == .schule { zustand } }
+            }
             if e.kontext == .schule {
-                schulKarte(zahlenDa ? 3 : 4)
-                mensaKarte
+                schulKarte(zahlenDa ? 2 : 4, mitMensa: true)
                 if zahlenDa { zahlen } else { termineKarte(2) }
             } else {
                 termineKarte(3)
