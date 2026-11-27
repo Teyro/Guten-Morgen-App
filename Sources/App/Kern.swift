@@ -730,6 +730,6 @@ func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T
 
 /// Bereiche, die das Widget direkt öffnet
 enum Bereich: String, Identifiable, Hashable {
-    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan, personal, untis, fussball
+    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan, personal, untis, fussball, chat
     var id: String { rawValue }
 }

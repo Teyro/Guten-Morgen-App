@@ -62,6 +62,7 @@ struct HauptAnsicht: View {
                         Button { pfad = [.fussball] } label: { Label("Fußballplatz", systemImage: "soccerball") }
                         if !Marke.schule { Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") } }
                         Divider()
+                        Button { pfad = [.chat] } label: { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
                         Button { pfad = [.stoerungen] } label: { Label("Störungen", systemImage: "wrench.and.screwdriver.fill") }
                         Button { pfad = [.aufgaben] } label: { Label("Aufgaben", systemImage: "checklist") }
                         Button { pfad = [.abwesend] } label: { Label("Abwesenheiten", systemImage: "person.crop.circle.badge.xmark") }
@@ -86,6 +87,7 @@ struct HauptAnsicht: View {
                 case .aufgaben: AufgabenAnsicht(kern: kern)
                 case .personal: PersonaldatenAnsicht()
                 case .fussball: FussballAnsicht(kern: kern)
+                case .chat: ChatListe(kern: kern)
                 default: VertretungAnsicht(kern: kern)
                 }
             }

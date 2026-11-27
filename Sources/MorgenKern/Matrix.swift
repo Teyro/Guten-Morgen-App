@@ -1,0 +1,141 @@
+import Foundation
+
+/// Chat über den Matrix-Server der Schule (IServ-Messenger, Element): Anmeldung mit den IServ-Zugangsdaten,
+/// Räume mit Nachrichten über /sync, Antworten als Text.
+/// shortcut: keine Ende-zu-Ende-Verschlüsselung, keine Einladungen, kein Nachladen älterer Nachrichten – nachrüsten, wenn die Schule E2EE erzwingt.
+public struct Matrix: Sendable {
+    public static let server = "https://s5586.schuldock.de"
+    public var token: String
+    /// eigene Matrix-ID (@benutzer:server)
+    public var ich: String
+
+    public init(token: String, ich: String) { self.token = token; self.ich = ich }
+
+    public struct Nachricht: Hashable, Identifiable, Sendable {
+        public var id: String
+        public var absender: String
+        public var text: String
+        public var zeit: Date
+        public var verschluesselt = false
+    }
+
+    public struct Raum: Hashable, Identifiable, Sendable {
+        public var id: String
+        public var titel = ""
+        /// Matrix-ID → Anzeigename
+        public var namen: [String: String] = [:]
+        /// andere Mitglieder (für Direktchats ohne Raumnamen)
+        public var helden: [String] = []
+        public var ungelesen = 0
+        public var verschluesselt = false
+        public var nachrichten: [Nachricht] = []
+
+        public var name: String {
+            if !titel.isEmpty { return titel }
+            let h = helden.map { namen[$0] ?? Matrix.lokal($0) }
+            return h.isEmpty ? "Chat" : h.joined(separator: ", ")
+        }
+        public func name(von id: String) -> String { namen[id] ?? Matrix.lokal(id) }
+        public var letzte: Date { nachrichten.last?.zeit ?? .distantPast }
+    }
+
+    public enum Fehler: LocalizedError {
+        case anmeldung, server(Int, String)
+        public var errorDescription: String? {
+            switch self {
+            case .anmeldung: "Anmeldung am Chat fehlgeschlagen – IServ-Benutzername und Passwort prüfen."
+            case .server(let s, let t): "Chat-Server antwortet nicht (HTTP \(s))\(t.isEmpty ? "" : ": \(t)")."
+            }
+        }
+    }
+
+    /// „@christian.stake:s5586.schuldock.de“ → „christian.stake“
+    public static func lokal(_ id: String) -> String {
+        String(id.dropFirst(id.hasPrefix("@") ? 1 : 0).split(separator: ":").first ?? "")
+    }
+
+    // MARK: Netz
+
+    static func anfrage(_ pfad: String, methode: String = "GET", token: String? = nil, koerper: [String: Any]? = nil, frist: TimeInterval = 30) async throws -> [String: Any] {
+        var r = URLRequest(url: URL(string: server + pfad)!, timeoutInterval: frist)
+        r.httpMethod = methode
+        if let token { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let koerper { r.httpBody = try JSONSerialization.data(withJSONObject: koerper); r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        let (d, a) = try await URLSession.shared.data(for: r)
+        let s = (a as? HTTPURLResponse)?.statusCode ?? 0
+        let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+        if s == 401 || s == 403 { throw Fehler.anmeldung }
+        guard (200..<300).contains(s) else { throw Fehler.server(s, j["error"] as? String ?? "") }
+        return j
+    }
+
+    public static func anmelden(benutzer: String, passwort: String) async throws -> Matrix {
+        let j = try await anfrage("/_matrix/client/v3/login", methode: "POST", koerper: [
+            "type": "m.login.password", "identifier": ["type": "m.id.user", "user": benutzer.trimmingCharacters(in: .whitespaces).lowercased()],
+            "password": passwort, "initial_device_display_name": Marke.schule ? "DammAPP" : "GutenMorgen"])
+        guard let t = j["access_token"] as? String, let u = j["user_id"] as? String else { throw Fehler.anmeldung }
+        return Matrix(token: t, ich: u)
+    }
+
+    /// Ein /sync: [seit] leer = erster Abruf (je Raum die letzten 30 Nachrichten), [warten] ms Long-Poll
+    public func sync(seit: String, warten: Int = 0) async throws -> [String: Any] {
+        let filter = #"{"room":{"timeline":{"limit":30},"state":{"lazy_load_members":true}}}"#
+        var q = "filter=" + filter.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "&timeout=\(warten)"
+        if !seit.isEmpty { q += "&since=" + seit.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! }
+        return try await Self.anfrage("/_matrix/client/v3/sync?" + q, token: token, frist: TimeInterval(warten / 1000 + 30))
+    }
+
+    public func senden(raum: String, text: String) async throws {
+        let txn = "dm\(Int(Date().timeIntervalSince1970 * 1000))"
+        _ = try await Self.anfrage("/_matrix/client/v3/rooms/\(Self.pfad(raum))/send/m.room.message/\(txn)", methode: "PUT", token: token,
+                                   koerper: ["msgtype": "m.text", "body": text])
+    }
+
+    /// Gelesen bis [event] (Lesebestätigung + Marker)
+    public func gelesen(raum: String, event: String) async {
+        _ = try? await Self.anfrage("/_matrix/client/v3/rooms/\(Self.pfad(raum))/read_markers", methode: "POST", token: token,
+                                    koerper: ["m.fully_read": event, "m.read": event])
+    }
+
+    public func abmelden() async { _ = try? await Self.anfrage("/_matrix/client/v3/logout", methode: "POST", token: token, koerper: [:]) }
+
+    static func pfad(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s }
+
+    // MARK: Lesen
+
+    /// Antwort von /sync in die bekannten Räume einarbeiten; liefert die Räume (neueste zuerst) und das Merkzeichen für den nächsten Abruf
+    public static func einarbeiten(_ j: [String: Any], in alt: [Raum]) -> (raeume: [Raum], weiter: String) {
+        var raeume = Dictionary(alt.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let rooms = j["rooms"] as? [String: Any] ?? [:]
+        for id in (rooms["leave"] as? [String: Any] ?? [:]).keys { raeume[id] = nil }
+        for (id, wert) in rooms["join"] as? [String: Any] ?? [:] {
+            guard let r = wert as? [String: Any] else { continue }
+            var raum = raeume[id] ?? Raum(id: id)
+            let tl = r["timeline"] as? [String: Any] ?? [:]
+            if tl["limited"] as? Bool == true { raum.nachrichten = [] } // Lücke: nur das Neue zeigen
+            let ereignisse = ((r["state"] as? [String: Any])?["events"] as? [[String: Any]] ?? []) + (tl["events"] as? [[String: Any]] ?? [])
+            for e in ereignisse {
+                let typ = e["type"] as? String ?? "", inhalt = e["content"] as? [String: Any] ?? [:]
+                switch typ {
+                case "m.room.name": raum.titel = inhalt["name"] as? String ?? ""
+                case "m.room.encryption": raum.verschluesselt = true
+                case "m.room.member":
+                    if let k = e["state_key"] as? String, let n = inhalt["displayname"] as? String, !n.isEmpty { raum.namen[k] = n }
+                case "m.room.message", "m.room.encrypted":
+                    guard let eid = e["event_id"] as? String, !raum.nachrichten.contains(where: { $0.id == eid }) else { continue }
+                    let enc = typ == "m.room.encrypted"
+                    let text = enc ? "🔒 Verschlüsselte Nachricht – nur in Element/IServ lesbar" : (inhalt["body"] as? String ?? "")
+                    guard !text.isEmpty else { continue } // gelöscht
+                    let ms = (e["origin_server_ts"] as? NSNumber)?.doubleValue ?? 0
+                    raum.nachrichten.append(Nachricht(id: eid, absender: e["sender"] as? String ?? "", text: text, zeit: Date(timeIntervalSince1970: ms / 1000), verschluesselt: enc))
+                default: break
+                }
+            }
+            if let h = (r["summary"] as? [String: Any])?["m.heroes"] as? [String] { raum.helden = h }
+            if let u = (r["unread_notifications"] as? [String: Any])?["notification_count"] as? Int { raum.ungelesen = u }
+            raum.nachrichten = Array(raum.nachrichten.suffix(200))
+            raeume[id] = raum
+        }
+        return (raeume.values.sorted { $0.letzte > $1.letzte }, j["next_batch"] as? String ?? "")
+    }
+}
