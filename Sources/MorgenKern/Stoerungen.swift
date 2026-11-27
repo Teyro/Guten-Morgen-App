@@ -139,6 +139,7 @@ public struct StoerungVerlauf: Sendable {
         public var autor: String
         public var zeit: String
         public var text: String
+        public init(autor: String, zeit: String, text: String) { self.autor = autor; self.zeit = zeit; self.text = text }
     }
     public struct Formular: Sendable {
         public var aktion: String
