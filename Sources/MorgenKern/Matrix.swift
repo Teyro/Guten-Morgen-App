@@ -51,7 +51,7 @@ public struct Matrix: Sendable {
         }
     }
 
-    /// „@christian.stake:s5586.schuldock.de“ → „christian.stake“
+    /// „@vorname.name:s5586.schuldock.de“ → „vorname.name“
     public static func lokal(_ id: String) -> String {
         String(id.dropFirst(id.hasPrefix("@") ? 1 : 0).split(separator: ":").first ?? "")
     }
