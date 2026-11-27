@@ -150,7 +150,8 @@ public struct StoerungVerlauf: Sendable {
 }
 
 extension Stoerungen {
-    static let eintragMuster = #"<(div|li|article|section|tr)\b[^>]*class=["'][^"']*\b(comment|kommentar|reply|antwort|answer|message|nachricht|history|verlauf|activity|timeline-item|post)[^"']*["'][^>]*>"#
+    // ganze Wörter: „comment“, „comment-item“ ja – Sammelbehälter wie „comments“/„messages“ nicht
+    static let eintragMuster = #"<(div|li|article|section|tr)\b[^>]*class=["'](?:[^"']*[\s])?(comment|kommentar|reply|antwort|answer|message|nachricht|activity|timeline-item|post)(?:-[\w-]*)?(?=[\s"'])[^"']*["'][^>]*>"#
 
     /// Detailseite laden (abgelaufene Sitzung → neu anmelden) und lesen
     public static func verlauf(_ s: IServ, url: String) async throws -> StoerungVerlauf {
@@ -210,7 +211,49 @@ extension Stoerungen {
             let t = absatzText(inhalt)
             if !t.isEmpty { eintraege.append(.init(autor: "", zeit: "", text: String(t.prefix(8000)))) }
         }
-        return StoerungVerlauf(eintraege: eintraege, formular: formular)
+        // Ein Block mit mehreren Kommentaren (Sammelbehälter oder ganze Seite): an „Name am 18.11.2026 11:03“ trennen
+        return StoerungVerlauf(eintraege: eintraege.flatMap(aufteilen), formular: formular)
+    }
+
+    /// Kommentarkopf wie in IServ: „Christian Stake am 18.11.2026 11:03“ (auch „…, 11:03 Uhr“) am Zeilenanfang
+    static let kopfMuster = #"(?m)^[ \t]*([A-ZÄÖÜ][\p{L}'.]+(?:[ -][A-ZÄÖÜ][\p{L}'.]+){0,3})[ \t]+am[ \t]+(\d{1,2}\.\d{1,2}\.\d{2,4})(?:,?[ \t]*(?:um[ \t]*)?(\d{1,2}:\d{2}))?(?:[ \t]*Uhr)?[ \t]*:?[ \t]*\n?"#
+
+    /// Ein Eintrag mit mehreren Kommentarköpfen → je Kommentar ein Eintrag (der Text davor bleibt beim ursprünglichen Absender)
+    static func aufteilen(_ e: StoerungVerlauf.Eintrag) -> [StoerungVerlauf.Eintrag] {
+        guard let re = try? NSRegularExpression(pattern: kopfMuster) else { return [e] }
+        let ns = e.text as NSString
+        let treffer = re.matches(in: e.text, range: NSRange(location: 0, length: ns.length))
+        guard !treffer.isEmpty else { return [e] }
+        func g(_ m: NSTextCheckingResult, _ i: Int) -> String { m.range(at: i).location == NSNotFound ? "" : ns.substring(with: m.range(at: i)) }
+        func sauber(_ t: String) -> String {
+            // Überschriften der Seite („Kommentare“, „Dateien“) am Rand weg
+            t.replacingOccurrences(of: #"(?m)^[ \t]*(Kommentare|Kommentar|Dateien|Antworten)[ \t]*$"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var aus: [StoerungVerlauf.Eintrag] = []
+        let vorn = sauber(ns.substring(to: treffer[0].range.location))
+        if !vorn.isEmpty { aus.append(.init(autor: e.autor, zeit: e.zeit, text: vorn)) }
+        for (i, m) in treffer.enumerated() {
+            let start = m.range.location + m.range.length
+            let ende = i + 1 < treffer.count ? treffer[i + 1].range.location : ns.length
+            let text = sauber(ns.substring(with: NSRange(location: start, length: max(0, ende - start))))
+            let zeit = [g(m, 2), g(m, 3)].filter { !$0.isEmpty }.joined(separator: " ")
+            if !text.isEmpty { aus.append(.init(autor: HTML.nameSchoen(g(m, 1)), zeit: zeit, text: text)) }
+        }
+        return aus.isEmpty ? [e] : aus
+    }
+
+    /// Bin das ich? IServ-Benutzer „christian.stake“ ↔ „Christian Stake“ / „Christian Stake-Admin“
+    public static func istIch(_ autor: String, benutzer: String, ichName: String = "") -> Bool {
+        func norm(_ s: String) -> String {
+            s.lowercased().replacingOccurrences(of: #"[-\s]*\(?admin\)?$"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"[._-]"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        }
+        let a = norm(autor)
+        guard !a.isEmpty else { return false }
+        if !ichName.isEmpty { return a == norm(ichName) }
+        let b = norm(benutzer.components(separatedBy: "@")[0])
+        return !b.isEmpty && (a == b || a.hasPrefix(b + " ") )
     }
 
     /// HTML → Text mit Absätzen (statt alles in einer Zeile)

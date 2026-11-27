@@ -5,7 +5,11 @@ import MorgenKern
 /// Den Fokus selbst schaltet iOS nach Ort oder Zeit ein (Einstellungen → Fokus → Schule → Zeitplan → Ort) –
 /// Apps dürfen einen Fokus nicht selbst einschalten.
 struct SchulFokusFilter: SetFocusFilterIntent {
-    static let title = LocalizedStringResource(stringLiteral: Marke.name)
+    #if SCHULE
+    static let title: LocalizedStringResource = "DammAPP"
+    #else
+    static let title: LocalizedStringResource = "GutenMorgen"
+    #endif
     static let description: IntentDescription? = "Im Fokus die Schul-Infos (Stunden, Vertretung, Aufsicht) zuerst zeigen."
 
     /// Standard aus: Ohne aktiven Fokus liefert iOS die Standardwerte – dann gilt wie sonst der Standort

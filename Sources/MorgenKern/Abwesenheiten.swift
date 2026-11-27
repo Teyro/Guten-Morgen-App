@@ -156,7 +156,7 @@ public enum Abwesenheiten {
             return a > 0 ? ("\(k) + \(a)", "krank + außer Haus") : ("\(k)", "krank")
         }
         let n = liste.filter { !ausgegraut($0, aus) }.count
-        return ("\(n)", n == 1 ? "fehlt" : "fehlen")
+        return ("\(n)", "abwesend")
     }
 
     public static func amTag(_ l: [Abwesenheit], ziel: Date, klassen: [String] = []) -> [Abwesenheit] {

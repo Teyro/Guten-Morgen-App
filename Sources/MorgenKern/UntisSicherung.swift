@@ -10,6 +10,22 @@ public extension Untis {
     /// Kennung der Freigabe „Schul-Ordner“ (das Passwort trägt jede Lehrkraft selbst ein)
     static let sicherungFreigabe = "mxmLySXtyzC6XFp"
 
+    /// Aus der Nextcloud der Schule (WebDAV, Ordner „Untis“) – mit dem App-Zugang aus den Schul-Vorgaben
+    static func sicherungLaden(nextcloud server: String, benutzer: String, passwort: String) async throws -> Data {
+        var s = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        if !s.hasPrefix("http") { s = "https://" + s }
+        let pfad = "/remote.php/dav/files/" + (benutzer.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? benutzer) + "/Untis/untis-plan.json"
+        guard let url = URL(string: s + pfad) else { throw Fehler.text("Nextcloud-Adresse ungültig.") }
+        var r = URLRequest(url: url, timeoutInterval: 30)
+        r.setValue("Basic " + Data("\(benutzer):\(passwort)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+        let (d, a) = try await URLSession.shared.data(for: r)
+        let code = (a as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { throw Fehler.text("Nextcloud: App-Passwort falsch.") }
+        guard code == 200 else { throw Fehler.text("Untis-Sicherung in der Nextcloud nicht abrufbar (HTTP \(code)).") }
+        return d
+    }
+
     static func sicherungLaden(passwort: String) async throws -> Data {
         var r = URLRequest(url: URL(string: sicherungAdresse)!, timeoutInterval: 30)
         r.setValue("Basic " + Data("\(sicherungFreigabe):\(passwort)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")

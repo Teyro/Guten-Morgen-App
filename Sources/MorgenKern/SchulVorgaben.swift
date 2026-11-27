@@ -19,6 +19,10 @@ public struct SchulVorgaben: Codable, Equatable, Sendable {
     public var untisSchule = ""
     public var bundesland = ""
     public var haeuser: [String: [String]] = [:]
+    /// Nextcloud der Schule (ein gemeinsamer App-Zugang für die Testphase)
+    public var nextcloudServer = ""
+    public var nextcloudBenutzer = ""
+    public var nextcloudPasswort = ""
     public init() {}
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -26,6 +30,7 @@ public struct SchulVorgaben: Codable, Equatable, Sendable {
         vertretungLink = w(.vertretungLink); freigabe = w(.freigabe); schulOrdner = w(.schulOrdner); mensaAdresse = w(.mensaAdresse)
         obstKalender = w(.obstKalender); schulKalender = w(.schulKalender); iservServer = w(.iservServer); untisLink = w(.untisLink)
         untisSchule = w(.untisSchule); bundesland = w(.bundesland)
+        nextcloudServer = w(.nextcloudServer); nextcloudBenutzer = w(.nextcloudBenutzer); nextcloudPasswort = w(.nextcloudPasswort)
         haeuser = (try? c.decodeIfPresent([String: [String]].self, forKey: .haeuser)) ?? nil ?? [:]
     }
 
@@ -73,7 +78,9 @@ public struct SchulVorgaben: Codable, Equatable, Sendable {
     #endif
 
     /// In die Einstellungen übernehmen (nur Schul-weite Werte, nichts Persönliches); Rückgabe: Freigabe- und Schul-Ordner-Passwort
-    public func anwenden(_ e: inout MorgenEinstellungen) -> (freigabe: String, schulOrdner: String) {
+    public func anwenden(_ e: inout MorgenEinstellungen) -> (freigabe: String, schulOrdner: String, nextcloud: String) {
+        if !nextcloudServer.isEmpty { e.nextcloudServer = nextcloudServer }
+        if !nextcloudBenutzer.isEmpty { e.nextcloudBenutzer = nextcloudBenutzer }
         if !vertretungLink.isEmpty { e.vertretungLink = vertretungLink }
         if !mensaAdresse.isEmpty { e.mensaAdresse = mensaAdresse }
         if !obstKalender.isEmpty { e.obstKalender = obstKalender }
@@ -83,6 +90,6 @@ public struct SchulVorgaben: Codable, Equatable, Sendable {
         if !untisSchule.isEmpty { e.untisSchule = untisSchule }
         if !bundesland.isEmpty { e.bundesland = bundesland }
         if !haeuser.isEmpty { e.haeuser = haeuser }
-        return (freigabe, schulOrdner)
+        return (freigabe, schulOrdner, nextcloudPasswort)
     }
 }

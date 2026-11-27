@@ -13,7 +13,7 @@ enum Kachel: String, CaseIterable, Identifiable {
     var name: String {
         switch self {
         case .wecker: "Wecker"; case .schule: "Schule (Stunden & Vertretung)"; case .mensa: "Speiseplan"
-        case .zahlen: "Kinder · Störungen · Aufgaben"; case .schultermine: "Schultermine"; case .wetter: "Wetter"
+        case .zahlen: "Abwesend · Störungen · Aufgaben"; case .schultermine: "Schultermine"; case .wetter: "Wetter"
         case .termine: "Termine & Erinnerungen"; case .post: "Post & Pakete"; case .personal: "Personaldaten (ZPD)"
         }
     }
@@ -677,6 +677,12 @@ struct EinstellungenAnsicht: View {
             } header: { Text("Schultag") } footer: { Text("Deine Stunden stehen im Briefing, im Widget „Schultag“ und – als Live-Aktivität – auf dem Sperrbildschirm, in der Dynamic Island und auf der Apple Watch: was gerade läuft, wie lange noch, was danach kommt. Vertretungen und Aufsichten aus dem Vertretungsplan kommen von selbst dazu.") }
 
             Section {
+                LabeledContent("Server") { TextField("https://…", text: $k.einstellungen.nextcloudServer).multilineTextAlignment(.trailing).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                LabeledContent("Benutzer") { TextField("Benutzer", text: $k.einstellungen.nextcloudBenutzer).multilineTextAlignment(.trailing).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                SecureField("App-Passwort", text: $k.nextcloudPasswort)
+            } header: { Text("Nextcloud der Schule") } footer: { Text("Kommt mit dem Schul-Code im Einrichtungs-Assistenten von selbst. Ohne eigenen Untis-Zugang holt die App deinen Stundenplan aus der Untis-Sicherung dort – eine Übergangslösung, die später abgeschaltet wird; ein eigener Untis-Zugang wird empfohlen und hat immer Vorrang.") }
+
+            Section {
                 Toggle("WebUntis verbinden", isOn: $k.einstellungen.untisAn)
                 if kern.einstellungen.untisAn {
                     if QRScanner.verfuegbar { Button { scannen = true } label: { Label("QR-Code „Untis Mobile“ scannen", systemImage: "qrcode.viewfinder") } }
@@ -735,13 +741,14 @@ struct EinstellungenAnsicht: View {
     @ViewBuilder private var iserv: some View {
         @Bindable var k = kern
             Section {
-                Toggle("Abwesenheiten (Kinder)", isOn: $k.einstellungen.abwesenheiten)
+                Toggle("Abwesenheiten", isOn: $k.einstellungen.abwesenheiten)
                 Toggle("Störungsmeldungen", isOn: $k.einstellungen.stoerungen)
                 if kern.einstellungen.abwesenheiten || kern.einstellungen.stoerungen {
                     TextField("IServ-Adresse, z. B. schule.de", text: $k.einstellungen.iservServer).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     TextField("Benutzername", text: $k.einstellungen.iservBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("Passwort", text: $k.iservPasswort)
                     SecureField("2FA-Schlüssel (optional)", text: $k.totpGeheim)
+                    TextField("Ich bin (Name in Kommentaren, leer = automatisch)", text: $k.einstellungen.ichName).autocorrectionDisabled()
                     if kern.einstellungen.abwesenheiten {
                         TextField("Nur Klassen, z. B. 2a, 2b (leer = alle)", text: $k.einstellungen.abwesendKlassen).textInputAutocapitalization(.never)
                         Toggle("Sichtschutz im Widget (nur Vorname + Initiale)", isOn: $k.einstellungen.sichtschutz)

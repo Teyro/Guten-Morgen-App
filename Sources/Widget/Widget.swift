@@ -319,11 +319,11 @@ struct MorgenWidgetAnsicht: View {
         }
     }
 
-    /// Kinder fehlen · Störungen · Aufgaben – je ein gleich großer Kasten (Zahl + eine Zeile), antippen öffnet die Liste
+    /// Abwesend · Störungen · Aufgaben – je ein gleich großer Kasten (Zahl + eine Zeile), antippen öffnet die Liste
     private var zahlen: some View {
         HStack(spacing: 6) {
             if let k = e.kinder {
-                kasten("Fehlen", "person.crop.circle.badge.xmark", ziel: "abwesend", gleichHoch: true) {
+                kasten("Abwesend", "person.crop.circle.badge.xmark", ziel: "abwesend", gleichHoch: true) {
                     Text(e.fehlen?.zahl ?? "\(k.count)").font(.headline.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
                     // ab Vertretungsplan: „krank + außer Haus“, sonst die ersten Namen
                     Text(e.fehlen.map { $0.text.hasPrefix("krank") } == true ? e.fehlen!.text : (k.isEmpty ? "niemand" : k.prefix(2).joined(separator: ", "))).font(.caption2).lineLimit(1).opacity(0.75)

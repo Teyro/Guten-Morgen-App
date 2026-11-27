@@ -11,7 +11,7 @@ final class AbwesendZahlTests: XCTestCase {
     func testMorgensIServOhneAusgegraute() {
         XCTAssertEqual(Abwesenheiten.zahl(liste, aus: [], plan: nil, ziel: tag(23)).zahl, "3")
         let z = Abwesenheiten.zahl(liste, aus: [" ben muster "], plan: nil, ziel: tag(23))
-        XCTAssertEqual(z.zahl, "2"); XCTAssertEqual(z.text, "fehlen")
+        XCTAssertEqual(z.zahl, "2"); XCTAssertEqual(z.text, "abwesend")
         XCTAssertTrue(Abwesenheiten.ausgegraut(liste[1], ["Ben Muster"]))
     }
 

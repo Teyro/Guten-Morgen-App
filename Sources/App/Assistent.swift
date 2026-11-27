@@ -87,6 +87,11 @@ struct EinrichtungsAssistent: View {
                     SecureField("Passwort der Freigabe", text: $k.freigabePasswort)
                     SecureField("Schul-Ordner-Passwort (Untis-Sicherung)", text: $k.schulOrdnerPasswort)
                 }
+                Section("Nextcloud der Schule (für die Untis-Sicherung)") {
+                    TextField("Server, z. B. https://cloud.schule.de", text: $k.einstellungen.nextcloudServer).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Benutzer", text: $k.einstellungen.nextcloudBenutzer).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("App-Passwort", text: $k.nextcloudPasswort)
+                }
             }
         case .kuerzel:
             Section {
@@ -127,7 +132,7 @@ struct EinrichtungsAssistent: View {
                     Toggle("Abwesenheiten", isOn: $k.einstellungen.abwesenheiten)
                     Toggle("Störungsmeldungen", isOn: $k.einstellungen.stoerungen)
                 }
-            } footer: { Text("Für fehlende Kinder und Störungsmeldungen. Edupool-Aufgaben verbindest du später in den Einstellungen.") }
+            } footer: { Text("Für Abwesenheiten (wer an der Schule heute nicht da ist) und Störungsmeldungen. Edupool-Aufgaben verbindest du später in den Einstellungen.") }
         case .fertig:
             Section {
                 VStack(alignment: .leading, spacing: 10) {
@@ -156,7 +161,8 @@ struct EinrichtungsAssistent: View {
             kern.einstellungen = e
             if !g.freigabe.isEmpty { kern.freigabePasswort = g.freigabe }
             if !g.schulOrdner.isEmpty { kern.schulOrdnerPasswort = g.schulOrdner }
-            geladen = true; meldung = "Vertretungsplan, Mensa-Portal, Schulobst, Untis und IServ der Schule sind eingetragen."
+            if !g.nextcloud.isEmpty { kern.nextcloudPasswort = g.nextcloud }
+            geladen = true; meldung = "Vertretungsplan, Nextcloud, Mensa-Portal, Schulobst, Untis und IServ der Schule sind eingetragen."
         } catch {
             geladen = false; meldung = error.localizedDescription
         }

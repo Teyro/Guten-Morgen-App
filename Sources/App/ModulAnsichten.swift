@@ -213,7 +213,20 @@ struct StoerungDetail: View {
                     abschnitt("Verlauf", "bubble.left.and.bubble.right.fill") {
                         if let v = verlauf {
                             if v.eintraege.isEmpty { Text("Noch keine Antworten.").foregroundStyle(.secondary) }
-                            ForEach(Array(v.eintraege.enumerated()), id: \.offset) { _, e in blase(e) }
+                            let liste = nachrichten(v.eintraege)
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(Array(liste.enumerated()), id: \.offset) { i, e in
+                                    let vorher = i > 0 ? liste[i - 1] : nil
+                                    if let tag = tagText(e.zeit), tag != vorher.flatMap({ tagText($0.zeit) }) {
+                                        Text(tag).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                            .padding(.horizontal, 10).padding(.vertical, 4).background(.quaternary, in: Capsule())
+                                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                                    }
+                                    // Name nur beim Absenderwechsel, Folgenachrichten derselben Person enger darunter
+                                    blase(e, mitName: vorher?.autor != e.autor || (vorher.flatMap { tagText($0.zeit) } != tagText(e.zeit)))
+                                        .padding(.top, vorher?.autor == e.autor ? 0 : 8)
+                                }
+                            }
                             if v.formular == nil { Label("Antworten geht für diese Meldung nur in IServ.", systemImage: "info.circle").font(.caption).foregroundStyle(.secondary) }
                         } else if fehler.isEmpty {
                             HStack { ProgressView(); Text("Lade Verlauf …").foregroundStyle(.secondary) }
@@ -240,24 +253,50 @@ struct StoerungDetail: View {
 
     /// Jeder Kommentar eine Blase wie im Chat: Bearbeiter (Technik) rechts, alle anderen links. Farbe je Person aus dem
     /// Edupool-Board „Medien“, sonst eine feste Farbe aus dem Namen; dazu ein Kreis mit den Initialen.
-    private func blase(_ e: StoerungVerlauf.Eintrag) -> some View {
-        let technik = !m.bearbeiter.isEmpty && !e.autor.isEmpty && (e.autor.localizedCaseInsensitiveContains(m.bearbeiter) || m.bearbeiter.localizedCaseInsensitiveContains(e.autor))
+    /// Erste Nachricht ohne Absender = Meldung selbst (Absender und Zeit der Meldung)
+    private func nachrichten(_ l: [StoerungVerlauf.Eintrag]) -> [StoerungVerlauf.Eintrag] {
+        l.enumerated().map { i, e in
+            guard i == 0, e.autor.isEmpty else { return e }
+            return .init(autor: m.autor, zeit: m.datum.map { $0.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)).replacingOccurrences(of: ",", with: "") } ?? e.zeit, text: e.text)
+        }
+    }
+
+    /// „18.11.2026 11:03“ → „Mittwoch, 18. November“ (Datums-Trenner wie im Messenger)
+    private func tagText(_ zeit: String) -> String? {
+        guard let r = zeit.range(of: #"\d{1,2}\.\d{1,2}\.\d{2,4}"#, options: .regularExpression) else { return nil }
+        let t = zeit[r].split(separator: ".").compactMap { Int($0) }
+        guard t.count == 3, let d = Zeit.kalender.date(from: DateComponents(year: t[2] < 100 ? 2000 + t[2] : t[2], month: t[1], day: t[0])) else { return nil }
+        if Zeit.kalender.isDateInToday(d) { return "Heute" }
+        if Zeit.kalender.isDateInYesterday(d) { return "Gestern" }
+        return d.formatted(.dateTime.locale(Locale(identifier: "de_DE")).weekday(.wide).day().month(.wide))
+    }
+
+    private func blase(_ e: StoerungVerlauf.Eintrag, mitName: Bool = true) -> some View {
+        // eigene Nachrichten rechts (angemeldeter IServ-Benutzer bzw. „Ich bin“ aus den Einstellungen), alle anderen links
+        let ich = Stoerungen.istIch(e.autor, benutzer: kern.einstellungen.iservBenutzer, ichName: kern.einstellungen.ichName)
+        let technik = ich
         let farbe = Aufgaben.farbe(fuer: e.autor, in: kern.personenFarben).map(FarbWahl.farbe) ?? Self.namensFarbe(e.autor)
         let initialen = e.autor.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
         let kreis = Text(initialen.isEmpty ? "?" : initialen).font(.caption2.weight(.bold)).foregroundStyle(.white)
             .frame(width: 30, height: 30).background(farbe.gradient, in: Circle())
         return HStack(alignment: .bottom, spacing: 8) {
-            if technik { Spacer(minLength: 36) } else { kreis }
-            VStack(alignment: .leading, spacing: 4) {
-                if !e.autor.isEmpty || !e.zeit.isEmpty {
-                    Text([e.autor, e.zeit].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption.weight(.semibold)).foregroundStyle(farbe)
-                }
-                Text(e.text).font(.callout).textSelection(.enabled)
+            if technik { Spacer(minLength: 48) } else { kreis.opacity(mitName ? 1 : 0) }
+            VStack(alignment: technik ? .trailing : .leading, spacing: 3) {
+                if mitName && !technik && !e.autor.isEmpty { Text(e.autor).font(.caption.weight(.semibold)).foregroundStyle(farbe) }
+                Text(e.text).font(.callout).foregroundStyle(technik ? Color.white : Color.primary).textSelection(.enabled)
+                if let u = uhrzeit(e.zeit) { Text(u).font(.caption2).foregroundStyle(technik ? Color.white.opacity(0.8) : Color.secondary) }
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(farbe.opacity(0.16), in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: technik ? 18 : 4, bottomTrailingRadius: technik ? 4 : 18, topTrailingRadius: 18, style: .continuous))
-            if technik { kreis } else { Spacer(minLength: 36) }
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(technik ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(farbe.opacity(0.16)),
+                        in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: technik ? 18 : 4, bottomTrailingRadius: technik ? 4 : 18, topTrailingRadius: 18, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: technik ? .trailing : .leading)
+            if technik { EmptyView() } else { Spacer(minLength: 24) }
         }
+    }
+
+    /// „18.11.2026 11:03“ → „11:03“
+    private func uhrzeit(_ zeit: String) -> String? {
+        zeit.range(of: #"\d{1,2}:\d{2}"#, options: .regularExpression).map { String(zeit[$0]) }
     }
 
     /// Feste Farbe aus dem Namen (gleicher Name = gleiche Farbe)

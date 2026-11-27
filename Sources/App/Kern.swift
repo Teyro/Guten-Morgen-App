@@ -24,6 +24,9 @@ final class Kern {
     var untisSchluessel: String { didSet { if !vorschau { Schluesselbund.speichern(untisSchluessel, "untisSchluessel") } } }
     /// Passwort der Freigabe „Schul-Ordner“ – für die Untis-Sicherung, wenn WebUntis ausfällt
     var schulOrdnerPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(schulOrdnerPasswort, "schulOrdner") } } }
+    /// App-Passwort der Schul-Nextcloud (aus den Schul-Vorgaben oder von Hand)
+    var nextcloudPasswort: String { didSet { if !vorschau { Schluesselbund.speichern(nextcloudPasswort, "nextcloud") } } }
+    var nextcloudBereit: Bool { !einstellungen.nextcloudServer.isEmpty && !einstellungen.nextcloudBenutzer.isEmpty && !nextcloudPasswort.isEmpty }
     var untis: UntisStand? { didSet { merke(untis, "untisStand") } }
     /// Stundenpläne anderer: Favoriten (Herz), gefundene Klassen/Lehrkräfte/Räume, offene Sitzung bzw. die Sicherung als Rückfall
     var untisFavoriten: [UntisElement] = Kern.gemerkt("untisFavoriten") ?? [] { didSet { merke(untisFavoriten, "untisFavoriten") } }
@@ -116,7 +119,7 @@ final class Kern {
             token = ""
             mensaPasswort = ""
             freigabePasswort = ""
-            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""; untisPasswort = ""; untisSchluessel = ""; schulOrdnerPasswort = ""
+            iservPasswort = ""; totpGeheim = ""; edupoolToken = ""; untisPasswort = ""; untisSchluessel = ""; schulOrdnerPasswort = ""; nextcloudPasswort = ""
             vorschauDaten()
             return
         }
@@ -134,6 +137,7 @@ final class Kern {
         untisPasswort = Schluesselbund.lesen("untis") ?? ""
         untisSchluessel = Schluesselbund.lesen("untisSchluessel") ?? ""
         schulOrdnerPasswort = Schluesselbund.lesen("schulOrdner") ?? ""
+        nextcloudPasswort = Schluesselbund.lesen("nextcloud") ?? ""
         untis = Kern.gemerkt("untisStand")
         postStand = Kern.gemerkt("postStand")
         abwesend = Kern.gemerkt("abwesendStand")
@@ -218,20 +222,26 @@ final class Kern {
     /// WebUntis: höchstens alle 6 Stunden; mit „übernehmen“ wird die Grundwoche zu „Mein Stundenplan“
     func untisLaden(erzwingen: Bool = false) async {
         let e = einstellungen
-        guard e.untisAn, !e.untisLink.isEmpty, !untisPasswort.isEmpty || !untisSchluessel.isEmpty || Untis.qr(e.untisLink) != nil else { return }
+        // Echter Untis-Zugang schlägt die Sicherung; ohne eigenen Zugang reicht das Kürzel (Übergangslösung über die Nextcloud)
+        let eigen = e.untisAn && !e.untisLink.isEmpty && (!untisPasswort.isEmpty || !untisSchluessel.isEmpty || Untis.qr(e.untisLink) != nil)
+        let ersatz = !e.untisName.isEmpty && (nextcloudBereit || !schulOrdnerPasswort.isEmpty)
+        guard eigen || ersatz else { return }
         let d = UserDefaults.standard
         guard erzwingen || Date().timeIntervalSince1970 - d.double(forKey: "untisGeladen") > 6 * 3600 else { return }
         let kuerzel = e.untisName
         var st: UntisStand?
         do {
+            guard eigen else { throw Untis.Fehler.text("Kein eigener Untis-Zugang.") }
             st = try await Untis.laden(link: e.untisLink, schule: e.untisSchule, benutzer: e.untisBenutzer, passwort: untisPasswort,
                                        schluessel: untisSchluessel.replacingOccurrences(of: " ", with: "").uppercased(), kuerzel: kuerzel)
             untisFehler = ""
         } catch {
-            // WebUntis fällt aus: die tägliche Untis-Sicherung aus dem Schul-Ordner
-            if !schulOrdnerPasswort.isEmpty, let daten = try? await Untis.sicherungLaden(passwort: schulOrdnerPasswort), let s = Untis.ausSicherung(daten, kuerzel: kuerzel) {
+            // WebUntis fällt aus oder kein eigener Zugang: die tägliche Untis-Sicherung (Nextcloud, sonst Schul-Ordner)
+            if let daten = await sicherung(), let s = Untis.ausSicherung(daten, kuerzel: kuerzel) {
                 st = s
-                untisFehler = "WebUntis nicht erreichbar – Stand aus der Untis-Sicherung vom \(s.stand.formatted(.dateTime.day().month(.twoDigits).hour().minute()))."
+                let stand = s.stand.formatted(.dateTime.day().month(.twoDigits).hour().minute())
+                untisFehler = eigen ? "WebUntis nicht erreichbar – Stand aus der Untis-Sicherung vom \(stand)."
+                    : "Übergangslösung: Stundenplan aus der Untis-Sicherung der Schule (Stand \(stand)). Ein eigener Untis-Zugang wird empfohlen."
             } else { untisFehler = error.localizedDescription }
         }
         guard let st else { return }
@@ -278,7 +288,12 @@ final class Kern {
 
     private func sicherung() async -> Data? {
         if let d = sicherungDaten { return d }
-        guard !schulOrdnerPasswort.isEmpty, let d = try? await Untis.sicherungLaden(passwort: schulOrdnerPasswort) else { return nil }
+        // zuerst die Nextcloud der Schule (ein Zugang für alles), sonst der Schul-Ordner
+        let e = einstellungen
+        var d: Data?
+        if nextcloudBereit { d = try? await Untis.sicherungLaden(nextcloud: e.nextcloudServer, benutzer: e.nextcloudBenutzer, passwort: nextcloudPasswort) }
+        if d == nil, !schulOrdnerPasswort.isEmpty { d = try? await Untis.sicherungLaden(passwort: schulOrdnerPasswort) }
+        guard let d else { return nil }
         sicherungDaten = d
         return d
     }
@@ -317,10 +332,25 @@ final class Kern {
 
     // MARK: Laden
 
+    /// Schon eingerichtete Geräte: Nextcloud-Zugang aus den Schul-Vorgaben nachholen (der Schul-Code ist das Schul-Ordner-Passwort)
+    private func nextcloudNachruesten() async {
+        guard nextcloudPasswort.isEmpty, !schulOrdnerPasswort.isEmpty else { return }
+        let d = UserDefaults.standard
+        guard Date().timeIntervalSince1970 - d.double(forKey: "vorgabenVersucht") > 12 * 3600 else { return }
+        d.set(Date().timeIntervalSince1970, forKey: "vorgabenVersucht")
+        guard let v = try? await SchulVorgaben.laden(code: schulOrdnerPasswort), !v.nextcloudPasswort.isEmpty else { return }
+        var e = einstellungen
+        if e.nextcloudServer.isEmpty { e.nextcloudServer = v.nextcloudServer }
+        if e.nextcloudBenutzer.isEmpty { e.nextcloudBenutzer = v.nextcloudBenutzer }
+        einstellungen = e
+        nextcloudPasswort = v.nextcloudPasswort
+    }
+
     func aktualisieren() async {
         guard !vorschau, !laedt else { return }
         laedt = true
         defer { laedt = false }
+        await nextcloudNachruesten()
         if einstellungen.termine || einstellungen.erinnerungen { await kalender.erlauben() }
         let k = Zeit.kalender
         termine = einstellungen.termine ? kalender.termine(von: k.startOfDay(for: Date()), tage: 3) : []
