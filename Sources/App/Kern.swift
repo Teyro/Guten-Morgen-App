@@ -77,6 +77,15 @@ final class Kern {
     var vertretungFehler = ""
     var mensaPlan: MensaPlan?
     var mensaFehler = ""
+    /// Letzte vollständige Aktualisierung (Startseite: „Zuletzt aktualisiert: heute, 06:18 Uhr“)
+    var zuletzt: Date? = UserDefaults.standard.object(forKey: "zuletztAktualisiert") as? Date
+    /// Quellen, die beim letzten Mal nicht geklappt haben (Name → Fehler)
+    var quellenFehler: [(String, String)] {
+        let e = einstellungen
+        return [("Vertretungsplan", e.vertretung ? vertretungFehler : ""), ("Mensa", e.mensa ? mensaFehler : ""), ("Abwesenheiten", e.abwesenheiten ? abwesendFehler : ""),
+                ("Störungen", e.stoerungen ? stoerungenFehler : ""), ("Aufgaben", e.aufgaben ? aufgabenFehler : ""),
+                ("Untis", untisFehler.hasPrefix("Übergangslösung") ? "" : untisFehler), ("Post", e.post && !Marke.schule ? postFehler : "")].filter { !$0.1.isEmpty }
+    }
     var obstTage: Set<String> = []
     var schulTermine: [SchulKalender.Termin] = []
     /// Fahrzeit zur Schule für einen Schultag (Apple Karten), gemerkt bis zum nächsten Laden
@@ -400,6 +409,7 @@ final class Kern {
         if e.weckerAutomatisch && Wecker.verfuegbar { await weckerStellen(still: true) }
         await nachAussen()
         await widgetUebergeben()
+        zuletzt = Date(); UserDefaults.standard.set(zuletzt, forKey: "zuletztAktualisiert")
     }
 
     // MARK: Aktionen
@@ -718,6 +728,6 @@ func versuch<T: Sendable>(_ f: @Sendable () async throws -> T) async -> Result<T
 
 /// Bereiche, die das Widget direkt öffnet
 enum Bereich: String, Identifiable, Hashable {
-    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan, personal, untis
+    case mensa, vertretung, termine, wetter, post, abwesend, stoerungen, aufgaben, stundenplan, personal, untis, fussball
     var id: String { rawValue }
 }

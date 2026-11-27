@@ -8,8 +8,10 @@ public struct Abwesenheit: Codable, Hashable, Sendable {
     public var bis: String
     public var art: String        // unentschuldigt, entschuldigt, krank, beurlaubt, ohne, sonstig
     public var stunden: String    // „8–10 Uhr“ oder Stundenangabe (leer = ganztägig)
-    public init(name: String, klasse: String, von: String, bis: String, art: String, stunden: String = "") {
-        self.name = name; self.klasse = klasse; self.von = von; self.bis = bis; self.art = art; self.stunden = stunden
+    /// Wann die Meldung in IServ eingegangen ist („2026-11-23T07:12“) – nur, wenn der Export es enthält
+    public var gemeldet: String?
+    public init(name: String, klasse: String, von: String, bis: String, art: String, stunden: String = "", gemeldet: String? = nil) {
+        self.name = name; self.klasse = klasse; self.von = von; self.bis = bis; self.art = art; self.stunden = stunden; self.gemeldet = gemeldet
     }
     /// Nur einzelne Stunden an einem Tag
     public var stundenweise: Bool { !stunden.isEmpty && von == bis }
@@ -74,13 +76,15 @@ public enum Abwesenheiten {
         func sp(_ m: String) -> Int? { kopf.firstIndex { $0.range(of: m, options: .regularExpression) != nil } }
         guard let sName = sp("name|schüler|schueler|kind"), let sVon = sp("von|beginn|start|datum|zeitraum|zeit|tag") else { return nil }
         let sKlasse = sp("klasse|lerngruppe"), sBis = sp("bis|ende"), sArt = sp("art|grund|typ|status|kategorie"), sStd = sp("stunde")
+        let sGem = sp(meldeSpalte).flatMap { $0 == sVon ? nil : $0 }
         return zeilen.dropFirst().compactMap { z -> Abwesenheit? in
             guard z.count > max(sName, sVon) else { return nil }
             let daten = HTML.alle(#"(\d{1,2}\.\d{1,2}\.(?:\d{2,4})?)"#, z[sVon])
             guard let von = datum(daten.first ?? z[sVon]), !z[sName].isEmpty else { return nil }
             let bis = sBis.flatMap { $0 < z.count ? datum(z[$0]) : nil } ?? (daten.count > 1 ? datum(daten[1]) : nil) ?? von
             return Abwesenheit(name: HTML.nameSchoen(z[sName]), klasse: sKlasse.map { $0 < z.count ? z[$0] : "" } ?? "", von: von, bis: bis,
-                               art: art(sArt.map { $0 < z.count ? z[$0] : "" } ?? ""), stunden: sStd.map { $0 < z.count ? z[$0] : "" } ?? uhrzeit(z[sVon]))
+                               art: art(sArt.map { $0 < z.count ? z[$0] : "" } ?? ""), stunden: sStd.map { $0 < z.count ? z[$0] : "" } ?? uhrzeit(z[sVon]),
+                               gemeldet: sGem.flatMap { $0 < z.count ? zeitpunkt(z[$0]) : nil })
         }
     }
 
@@ -92,14 +96,36 @@ public enum Abwesenheiten {
         let sVor = sp("^vorname"), sNach = sp("^nachname|^familienname"), sName = sp("name|schüler|schueler")
         guard sName != nil || sNach != nil, let sVon = sp("von|beginn|start|zeitraum|abwesenheitszeit|datum") else { return nil }
         let sKlasse = sp("klasse|lerngruppe"), sBis = sp("bis|ende"), sArt = sp("art|grund|typ|status|kategorie|entschuldig"), sStd = sp("stunde")
+        let sGem = sp(meldeSpalte).flatMap { $0 == sVon ? nil : $0 }
         func f(_ z: [String], _ i: Int?) -> String { i.map { $0 < z.count ? z[$0] : "" } ?? "" }
         return zeilen.dropFirst().compactMap { z -> Abwesenheit? in
             let daten = HTML.alle(#"(\d{1,2}\.\d{1,2}\.(?:\d{2,4})?|\d{4}-\d{2}-\d{2})"#, f(z, sVon))
             let name = sNach != nil ? [f(z, sVor), f(z, sNach)].filter { !$0.isEmpty }.joined(separator: " ") : HTML.nameSchoen(f(z, sName))
             guard let von = daten.first.flatMap({ datum($0) }), !name.isEmpty else { return nil }
             let bis = (sBis != nil ? datum(f(z, sBis)) : nil) ?? (daten.count > 1 ? datum(daten[1]) : nil) ?? von
-            return Abwesenheit(name: name, klasse: f(z, sKlasse), von: von, bis: bis, art: art(f(z, sArt)), stunden: sStd != nil ? f(z, sStd) : uhrzeit(f(z, sVon)))
+            return Abwesenheit(name: name, klasse: f(z, sKlasse), von: von, bis: bis, art: art(f(z, sArt)), stunden: sStd != nil ? f(z, sStd) : uhrzeit(f(z, sVon)),
+                               gemeldet: sGem != nil ? zeitpunkt(f(z, sGem)) : nil)
         }
+    }
+
+    /// Spalte mit dem Zeitpunkt der Meldung (IServ: „Erstellt“, „Gemeldet am“, „Erfasst“ …)
+    static let meldeSpalte = "erstellt|gemeldet|erfasst|eingetragen|angelegt|eingegangen|meldezeit|meldung am|created"
+
+    /// „23.11.2026 07:12“ / „2026-11-23 07:12:00“ → „2026-11-23T07:12“ (ohne Uhrzeit: nil – dann lieber nichts zeigen)
+    static func zeitpunkt(_ s: String) -> String? {
+        guard let tag = datum(s), let u = HTML.erster(#"(\d{1,2}:\d{2})"#, s) else { return nil }
+        let t = u.split(separator: ":")
+        return String(format: "%@T%02d:%@", tag, Int(t[0]) ?? 0, String(t[1]))
+    }
+
+    /// „gemeldet um 07:12 Uhr“ (heute) bzw. „gemeldet Mo, 23.11. um 18:40 Uhr“
+    public static func gemeldetText(_ a: Abwesenheit, heute: Date = Date()) -> String? {
+        guard let g = a.gemeldet, g.count >= 16, let tag = Zeit.tag(String(g.prefix(10))) else { return nil }
+        let uhr = String(g.suffix(5))
+        if Zeit.kalender.isDate(tag, inSameDayAs: heute) { return "gemeldet um \(uhr) Uhr" }
+        let wt = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][Zeit.kalender.component(.weekday, from: tag) - 1]
+        let k = Zeit.kalender.dateComponents([.day, .month], from: tag)
+        return String(format: "gemeldet %@, %02d.%02d. um %@ Uhr", wt, k.day ?? 0, k.month ?? 0, uhr)
     }
 
     /// „12.10.2026“, „12.10.“, „2026-10-12…“ → ISO-Tag

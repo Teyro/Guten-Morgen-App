@@ -31,6 +31,7 @@ struct HauptAnsicht: View {
     @Environment(\.scenePhase) private var phase
     @State private var pfad: [Bereich] = []
     @State private var code = ""
+    @State private var zeigeQuellen = false
 
     var body: some View {
         NavigationStack(path: $pfad) {
@@ -58,6 +59,7 @@ struct HauptAnsicht: View {
                         Button { pfad = [.untis] } label: { Label("Stundenpläne suchen", systemImage: "magnifyingglass") }
                         Button { pfad = [.vertretung] } label: { Label("Vertretung", systemImage: "arrow.triangle.swap") }
                         Button { pfad = [.mensa] } label: { Label("Speiseplan", systemImage: "fork.knife") }
+                        Button { pfad = [.fussball] } label: { Label("Fußballplatz", systemImage: "soccerball") }
                         if !Marke.schule { Button { pfad = [.post] } label: { Label("Post & Pakete", systemImage: "shippingbox.fill") } }
                         Divider()
                         Button { pfad = [.stoerungen] } label: { Label("Störungen", systemImage: "wrench.and.screwdriver.fill") }
@@ -83,6 +85,7 @@ struct HauptAnsicht: View {
                 case .stoerungen: StoerungenAnsicht(kern: kern)
                 case .aufgaben: AufgabenAnsicht(kern: kern)
                 case .personal: PersonaldatenAnsicht()
+                case .fussball: FussballAnsicht(kern: kern)
                 default: VertretungAnsicht(kern: kern)
                 }
             }
@@ -168,6 +171,19 @@ struct HauptAnsicht: View {
                     if kern.laedt { ProgressView().controlSize(.small) }
                 }
                 .font(.headline).foregroundStyle(.secondary)
+                // klein und unaufdringlich: Stand der Daten, Warnsymbol, wenn eine Quelle nicht geklappt hat
+                if let z = kern.zuletzt {
+                    let fehler = kern.quellenFehler
+                    Button { if !fehler.isEmpty { zeigeQuellen = true } } label: {
+                        HStack(spacing: 4) {
+                            Text("Zuletzt aktualisiert: " + (Zeit.kalender.isDateInToday(z) ? "heute" : Zeit.kalender.isDateInYesterday(z) ? "gestern" : z.formatted(.dateTime.day().month(.twoDigits))) + ", " + Zeit.uhrzeit(z) + " Uhr")
+                            if !fehler.isEmpty { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                        }.font(.caption).foregroundStyle(.secondary)
+                    }.buttonStyle(.plain)
+                    .alert("Nicht alles aktuell", isPresented: $zeigeQuellen) { Button("OK", role: .cancel) {} } message: {
+                        Text(fehler.map { "\($0.0): \($0.1)" }.joined(separator: "\n\n"))
+                    }
+                }
             }
             Spacer()
             if let w = kern.wetter {

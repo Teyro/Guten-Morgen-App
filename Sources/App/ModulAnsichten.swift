@@ -50,7 +50,7 @@ struct AbwesendAnsicht: View {
                 Text(art.emoji).font(.title3).opacity(grau ? 0.4 : 1)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(a.name).font(.body.weight(.semibold)).foregroundStyle(grau ? Color.secondary : Color.primary)
-                    Text([a.klasse, art.wort, Abwesenheiten.zeitText(a, ziel: ziel)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    Text([a.klasse, art.wort, Abwesenheiten.zeitText(a, ziel: ziel), Abwesenheiten.gemeldetText(a) ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: grau ? "eye.slash" : "eye").foregroundStyle(.tertiary)
