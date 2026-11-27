@@ -24,3 +24,14 @@ final class MatrixTests: XCTestCase {
         XCTAssertEqual(r[0].name(von: "@ich:s"), "ich")
     }
 }
+
+final class MatrixPinTests: XCTestCase {
+    /// Favorit-Tag = angepinnt und oben; Suche in Namen und Nachrichten
+    func testAnpinnenUndSuchen() throws {
+        let j = #"{"next_batch":"s1","rooms":{"join":{"!alt:s":{"account_data":{"events":[{"type":"m.tag","content":{"tags":{"m.favourite":{"order":0.5}}}}]},"state":{"events":[{"type":"m.room.name","state_key":"","content":{"name":"Medien"}}]},"timeline":{"events":[{"type":"m.room.message","event_id":"$1","sender":"@a:s","origin_server_ts":1000,"content":{"body":"Beamer kaputt"}}]}},"!neu:s":{"state":{"events":[{"type":"m.room.name","state_key":"","content":{"name":"Kollegium"}}]},"timeline":{"events":[{"type":"m.room.message","event_id":"$2","sender":"@b:s","origin_server_ts":9000,"content":{"body":"Konferenz"}}]}}}}}"#
+        let r = Matrix.einarbeiten(try XCTUnwrap(JSONSerialization.jsonObject(with: Data(j.utf8)) as? [String: Any]), in: []).raeume
+        XCTAssertEqual(r.map(\.name), ["Medien", "Kollegium"])
+        XCTAssertEqual(Matrix.suchen(r, "beamer").map(\.name), ["Medien"])
+        XCTAssertEqual(Matrix.suchen(r, "koll").map(\.name), ["Kollegium"])
+    }
+}

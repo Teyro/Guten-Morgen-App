@@ -27,6 +27,8 @@ public struct Matrix: Sendable {
         /// andere Mitglieder (für Direktchats ohne Raumnamen)
         public var helden: [String] = []
         public var ungelesen = 0
+        /// angepinnt = Favorit (Tag „m.favourite“, gleich wie in Element)
+        public var angepinnt = false
         public var verschluesselt = false
         public var nachrichten: [Nachricht] = []
 
@@ -97,11 +99,26 @@ public struct Matrix: Sendable {
                                     koerper: ["m.fully_read": event, "m.read": event])
     }
 
+    /// Anpinnen = Favorit in Matrix (erscheint auch in Element oben)
+    public func anpinnen(raum: String, _ an: Bool) async throws {
+        _ = try await Self.anfrage("/_matrix/client/v3/user/\(Self.pfad(ich))/rooms/\(Self.pfad(raum))/tags/m.favourite", methode: an ? "PUT" : "DELETE", token: token, koerper: an ? ["order": 0.5] : nil)
+    }
+
     public func abmelden() async { _ = try? await Self.anfrage("/_matrix/client/v3/logout", methode: "POST", token: token, koerper: [:]) }
 
     static func pfad(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s }
 
     // MARK: Lesen
+
+    /// Angepinnte oben, sonst neueste zuerst
+    public static func sortiert(_ r: [Raum]) -> [Raum] { r.sorted { ($0.angepinnt ? 1 : 0, $0.letzte) > ($1.angepinnt ? 1 : 0, $1.letzte) } }
+
+    /// Suche in Chat-Namen und Nachrichten (Groß-/Kleinschreibung egal)
+    public static func suchen(_ r: [Raum], _ text: String) -> [Raum] {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return r }
+        return r.filter { $0.name.localizedCaseInsensitiveContains(t) || $0.nachrichten.contains { $0.text.localizedCaseInsensitiveContains(t) } }
+    }
 
     /// Antwort von /sync in die bekannten Räume einarbeiten; liefert die Räume (neueste zuerst) und das Merkzeichen für den nächsten Abruf
     public static func einarbeiten(_ j: [String: Any], in alt: [Raum]) -> (raeume: [Raum], weiter: String) {
@@ -131,11 +148,14 @@ public struct Matrix: Sendable {
                 default: break
                 }
             }
+            for e in (r["account_data"] as? [String: Any])?["events"] as? [[String: Any]] ?? [] where e["type"] as? String == "m.tag" {
+                raum.angepinnt = ((e["content"] as? [String: Any])?["tags"] as? [String: Any])?["m.favourite"] != nil
+            }
             if let h = (r["summary"] as? [String: Any])?["m.heroes"] as? [String] { raum.helden = h }
             if let u = (r["unread_notifications"] as? [String: Any])?["notification_count"] as? Int { raum.ungelesen = u }
             raum.nachrichten = Array(raum.nachrichten.suffix(200))
             raeume[id] = raum
         }
-        return (raeume.values.sorted { $0.letzte > $1.letzte }, j["next_batch"] as? String ?? "")
+        return (sortiert(Array(raeume.values)), j["next_batch"] as? String ?? "")
     }
 }

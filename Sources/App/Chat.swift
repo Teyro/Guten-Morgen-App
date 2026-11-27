@@ -55,6 +55,19 @@ import MorgenKern
         do { try await m.senden(raum: raum, text: text) } catch { fehler = error.localizedDescription }
     }
 
+    /// Anpinnen sofort zeigen, dann an den Server (Favorit wie in Element); bei Fehler zurück
+    func anpinnen(_ r: Matrix.Raum) {
+        guard let m = matrix, let i = raeume.firstIndex(where: { $0.id == r.id }) else { return }
+        let an = !r.angepinnt
+        raeume[i].angepinnt = an; raeume = Matrix.sortiert(raeume)
+        Task {
+            do { try await m.anpinnen(raum: r.id, an) } catch {
+                fehler = error.localizedDescription
+                if let j = raeume.firstIndex(where: { $0.id == r.id }) { raeume[j].angepinnt = !an; raeume = Matrix.sortiert(raeume) }
+            }
+        }
+    }
+
     func gelesen(_ r: Matrix.Raum) {
         guard let m = matrix, let letzte = r.nachrichten.last, r.ungelesen > 0 else { return }
         if let i = raeume.firstIndex(where: { $0.id == r.id }) { raeume[i].ungelesen = 0 }
@@ -66,15 +79,24 @@ import MorgenKern
 struct ChatListe: View {
     let kern: Kern
     @State private var chat = ChatModell.shared
+    @State private var suche = ""
 
     var body: some View {
         List {
             if !chat.fehler.isEmpty { Label(chat.fehler, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-            ForEach(chat.raeume) { r in
+            ForEach(Matrix.suchen(chat.raeume, suche)) { r in
                 NavigationLink { ChatRaum(raumID: r.id) } label: { zeile(r) }
+                    .swipeActions(edge: .leading) {
+                        Button { chat.anpinnen(r) } label: { Label(r.angepinnt ? "Loslösen" : "Anpinnen", systemImage: r.angepinnt ? "pin.slash.fill" : "pin.fill") }.tint(.orange)
+                    }
+                    .contextMenu {
+                        Button { chat.anpinnen(r) } label: { Label(r.angepinnt ? "Loslösen" : "Anpinnen", systemImage: r.angepinnt ? "pin.slash" : "pin") }
+                    }
             }
         }
         .listStyle(.plain)
+        .searchable(text: $suche, prompt: "Suchen")
+        .animation(.snappy, value: chat.raeume.map(\.id))
         .overlay { if chat.laedt && chat.raeume.isEmpty { ProgressView("Chats laden …") } else if chat.raeume.isEmpty && chat.fehler.isEmpty { ContentUnavailableView("Keine Chats", systemImage: "bubble.left.and.bubble.right") } }
         .navigationTitle("Chat")
         .onAppear { chat.start(kern) }
@@ -87,6 +109,7 @@ struct ChatListe: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(r.name).font(.headline).lineLimit(1)
+                    if r.angepinnt { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.orange) }
                     Spacer()
                     if let l = r.nachrichten.last { Text(ChatRaum.zeitKurz(l.zeit)).font(.subheadline).foregroundStyle(.secondary) }
                 }
@@ -174,14 +197,14 @@ struct ChatRaum: View {
             TextField(raum?.verschluesselt == true ? "Verschlüsselter Chat – nur in Element" : "Nachricht", text: $text, axis: .vertical)
                 .lineLimit(1...5).focused($tippt)
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+                .glas(20)
                 .disabled(raum?.verschluesselt == true)
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button {
                     let t = text.trimmingCharacters(in: .whitespacesAndNewlines); text = ""
                     Task { await chat.senden(t, an: raumID) }
                 } label: { Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(.white).frame(width: 36, height: 36) }
-                .glassEffect(.regular.tint(.blue).interactive(), in: .circle)
+                .glasKnopf(.blue, 18)
                 .transition(.scale.combined(with: .opacity))
             }
         }
