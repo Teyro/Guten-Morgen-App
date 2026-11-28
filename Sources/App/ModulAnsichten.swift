@@ -218,7 +218,7 @@ struct StoerungDetail: View {
                         if let v = verlauf {
                             if v.eintraege.isEmpty { Text("Noch keine Antworten.").foregroundStyle(.secondary) }
                             let liste = nachrichten(v.eintraege)
-                            let farben = Self.farben(liste, Aufgaben.medienVorgabe.merging(kern.personenFarben) { $1 })
+                            let farben = Self.farben(liste, kern.farbenPersonen)
                             VStack(alignment: .leading, spacing: 4) {
                                 ForEach(Array(liste.enumerated()), id: \.offset) { i, e in
                                     let vorher = i > 0 ? liste[i - 1] : nil

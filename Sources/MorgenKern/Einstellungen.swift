@@ -98,6 +98,9 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
     /// Chat-Nachrichten: in der Schule/unterwegs sofort, zu Hause gesammelt um [chatZusammenfassung]
     public var chatMelden = true
     public var chatZusammenfassung = "18:00"
+    /// Chat-Blasen anderer in ihrer Edupool-Farbe; [eigeneFarben] = von Hand geändert (Name → #rrggbb), geht vor Edupool
+    public var chatFarben = true
+    public var eigeneFarben: [String: String] = [:]
     /// Mitteilung, wenn der Vertretungsplan mich betrifft (Vertretung/Aufsicht/fehlend)
     public var vertretungMelden = false
     /// Mitteilung, sobald der Vertretungsplan für den nächsten Schultag da ist
@@ -175,7 +178,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
              iservServer, iservBenutzer, iservHosts, abwesenheiten, abwesendKlassen, abwesendAus, nextcloudServer, nextcloudBenutzer, ichName, sichtschutz, abwesendQuelle, stoerungen, erledigteZeigen, stoerungQuelle, aufgaben, aufgabenFarbe,
              mitteilungen, vertretungMelden, vertretungDa, vertretungDringend, mitnehmen, schulKalender, gehaltErinnern, gehaltTag, gehaltAuto, kachelReihenfolge, kachelAus, nachtlampe, nachtlampeHelligkeit, nachtGeschichte, nachtGeschichteKurzbefehl, schulOrt, zuhauseOrt,
              schulzeiten, unterricht, aufsichtErinnern, schulAktivitaet, fahrt, fahrtArt, fertig, puffer, glaetteFrueher, routine,
-             untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius, chatMelden, chatZusammenfassung
+             untisAn, untisLink, untisSchule, untisBenutzer, untisUebernehmen, unterwegsAn, unterwegsAktionen, zuhauseRadius, chatMelden, chatZusammenfassung, chatFarben, eigeneFarben
     }
 
     /// Ältere/fehlende Felder → Standard
@@ -219,6 +222,7 @@ public struct MorgenEinstellungen: Codable, Hashable, Sendable {
         untisUebernehmen = w(.untisUebernehmen, s.untisUebernehmen); unterwegsAn = w(.unterwegsAn, s.unterwegsAn)
         unterwegsAktionen = w(.unterwegsAktionen, s.unterwegsAktionen); zuhauseRadius = w(.zuhauseRadius, s.zuhauseRadius)
         chatMelden = w(.chatMelden, s.chatMelden); chatZusammenfassung = w(.chatZusammenfassung, s.chatZusammenfassung)
+        chatFarben = w(.chatFarben, s.chatFarben); eigeneFarben = w(.eigeneFarben, s.eigeneFarben)
     }
 
     /// Unterwegs? (nur mit Schalter und gespeichertem Zuhause; ohne Standort: nein)

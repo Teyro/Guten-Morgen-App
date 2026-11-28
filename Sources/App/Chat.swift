@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 import MorgenKern
 
 /// Chat (Matrix/Element der Schule) – angemeldet mit den IServ-Zugangsdaten, aktuell gehalten per Long-Poll, solange der Chat offen ist.
@@ -10,6 +11,7 @@ import MorgenKern
     private var matrix: Matrix?
     private var weiter = ""
     private var schleife: Task<Void, Never>?
+    @ObservationIgnored private let bilder = NSCache<NSString, UIImage>()
 
     var ich: String { matrix?.ich ?? "" }
     var ungelesen: Int { raeume.reduce(0) { $0 + $1.ungelesen } }
@@ -53,6 +55,27 @@ import MorgenKern
 
     func stop() { schleife?.cancel(); schleife = nil }
 
+    /// Profil-/Vorschaubild (angemeldet geladen, im Speicher gemerkt)
+    func bild(_ mxc: String, groesse: Int) async -> UIImage? {
+        let k = "\(mxc)|\(groesse)" as NSString
+        if let b = bilder.object(forKey: k) { return b }
+        guard let m = matrix, let d = try? await m.medien(mxc, groesse: groesse), let b = UIImage(data: d) else { return nil }
+        bilder.setObject(b, forKey: k)
+        return b
+    }
+
+    /// Anhang ganz laden und als Datei ablegen (für die Vorschau / Teilen)
+    func datei(_ a: Matrix.Anhang) async -> URL? {
+        guard let m = matrix else { return nil }
+        do {
+            let d = try await m.medien(a.mxc)
+            let name = a.name.replacingOccurrences(of: "/", with: "-")
+            let u = FileManager.default.temporaryDirectory.appendingPathComponent(name.isEmpty ? "Anhang" : name)
+            try d.write(to: u)
+            return u
+        } catch { fehler = error.localizedDescription; return nil }
+    }
+
     func senden(_ text: String, an raum: String) async {
         guard let m = matrix else { return }
         do { try await m.senden(raum: raum, text: text) } catch { fehler = error.localizedDescription }
@@ -88,7 +111,7 @@ struct ChatListe: View {
         List {
             if !chat.fehler.isEmpty { Label(chat.fehler, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
             ForEach(Matrix.suchen(chat.raeume, suche)) { r in
-                NavigationLink { ChatRaum(raumID: r.id) } label: { zeile(r) }
+                NavigationLink { ChatRaum(raumID: r.id, farben: kern.einstellungen.chatFarben ? kern.farbenPersonen : nil) } label: { zeile(r) }
                     .swipeActions(edge: .leading) {
                         Button { chat.anpinnen(r) } label: { Label(r.angepinnt ? "Loslösen" : "Anpinnen", systemImage: r.angepinnt ? "pin.slash.fill" : "pin.fill") }.tint(.orange)
                     }
@@ -108,7 +131,7 @@ struct ChatListe: View {
     private func zeile(_ r: Matrix.Raum) -> some View {
         HStack(spacing: 12) {
             Circle().fill(r.ungelesen > 0 ? Color.blue : .clear).frame(width: 9, height: 9)
-            ChatBild(name: r.name, gross: true)
+            ChatBild(name: r.name, mxc: r.bild, gross: true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(r.name).font(.headline).lineLimit(1)
@@ -124,22 +147,45 @@ struct ChatListe: View {
     }
 }
 
-/// Runder Kreis mit Initialen in Grautönen wie bei Kontakten ohne Foto
+/// Profilbild; ohne Foto ein Kreis mit Initialen (grau oder in der Farbe der Person)
 struct ChatBild: View {
     let name: String
+    var mxc = ""
+    var farbe: Color?
     var gross = false
     var body: some View {
         let i = name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
+        let g: CGFloat = gross ? 48 : 28
         Text(i.isEmpty ? "?" : i).font(gross ? .headline : .caption2.weight(.semibold)).foregroundStyle(.white)
-            .frame(width: gross ? 48 : 28, height: gross ? 48 : 28)
-            .background(LinearGradient(colors: [Color(white: 0.66), Color(white: 0.52)], startPoint: .top, endPoint: .bottom), in: Circle())
+            .frame(width: g, height: g)
+            .background(farbe.map { AnyShapeStyle($0.gradient) } ?? AnyShapeStyle(LinearGradient(colors: [Color(white: 0.66), Color(white: 0.52)], startPoint: .top, endPoint: .bottom)), in: Circle())
+            .overlay { if !mxc.isEmpty { MatrixBild(mxc: mxc, groesse: 96).frame(width: g, height: g).clipShape(Circle()) } }
+    }
+}
+
+/// Bild vom Chat-Server (Vorschau in [groesse] Pixeln); solange es lädt: durchsichtig
+struct MatrixBild: View {
+    let mxc: String
+    let groesse: Int
+    var fuellen = true
+    @State private var bild: UIImage?
+    var body: some View {
+        Group {
+            if let bild { Image(uiImage: bild).resizable().aspectRatio(contentMode: fuellen ? .fill : .fit) } else { Color.clear }
+        }
+        .task(id: mxc) { bild = await ChatModell.shared.bild(mxc, groesse: groesse) }
     }
 }
 
 /// Ein Gespräch im Stil von iMessage: eigene Blasen blau rechts, andere grau links, gläserne Eingabeleiste unten
 struct ChatRaum: View {
     let raumID: String
+    /// Name → #rrggbb (Edupool), nil = graue Blasen
+    var farben: [String: String]?
     @State private var chat = ChatModell.shared
+    @State private var vorschau: URL?
+    @State private var laedtAnhang: String?
+    @Environment(\.colorScheme) private var schema
     @State private var text = ""
     @FocusState private var tippt: Bool
 
@@ -173,26 +219,60 @@ struct ChatRaum: View {
         .navigationTitle(raum?.name ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { if let r = raum { chat.gelesen(r) } }
+        .quickLookPreview($vorschau)
     }
 
     private func blase(_ n: Matrix.Nachricht, raum r: Matrix.Raum, ersteVon: Bool, letzteVon: Bool) -> some View {
         let eigen = n.absender == chat.ich
         let gruppe = r.helden.count > 1 || !r.titel.isEmpty
+        let name = r.name(von: n.absender)
+        let farbe = eigen ? nil : farben.flatMap { Aufgaben.farbe(fuer: name, in: $0) }.map(FarbWahl.farbe)
+        let hinten: AnyShapeStyle = eigen ? AnyShapeStyle(Color.blue.gradient) : farbe.map { AnyShapeStyle($0.opacity(schema == .dark ? 0.5 : 1)) } ?? AnyShapeStyle(Color(.systemGray5))
         return HStack(alignment: .bottom, spacing: 6) {
             if eigen { Spacer(minLength: 60) }
-            else if gruppe { ChatBild(name: r.name(von: n.absender)).opacity(letzteVon ? 1 : 0) }
-            VStack(alignment: .leading, spacing: 2) {
-                if gruppe && !eigen && ersteVon { Text(r.name(von: n.absender)).font(.caption).foregroundStyle(.secondary).padding(.leading, 12) }
-                Text(n.text)
-                    .italic(n.verschluesselt)
-                    .foregroundStyle(eigen ? Color.white : Color.primary)
-                    .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(eigen ? AnyShapeStyle(Color.blue.gradient) : AnyShapeStyle(Color(.systemGray5)), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                    .textSelection(.enabled)
+            else if gruppe { ChatBild(name: name, mxc: r.bilder[n.absender] ?? "", farbe: farbe).opacity(letzteVon ? 1 : 0) }
+            VStack(alignment: eigen ? .trailing : .leading, spacing: 2) {
+                if gruppe && !eigen && ersteVon { Text(name).font(.caption).foregroundStyle(.secondary).padding(.leading, 12) }
+                if let a = n.anhang { anhang(a, eigen: eigen, hinten: hinten) }
+                if n.anhang == nil || !(n.anhang?.beschriftung.isEmpty ?? true) {
+                    Text(n.text)
+                        .italic(n.verschluesselt)
+                        .foregroundStyle(eigen ? Color.white : Color.primary)
+                        .padding(.horizontal, 13).padding(.vertical, 8)
+                        .background(hinten, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+                        .textSelection(.enabled)
+                }
             }
             if !eigen { Spacer(minLength: 60) }
         }
         .padding(.top, ersteVon ? 6 : 0)
+    }
+
+    /// Foto/Video als Bild in der Blase, Dateien und Sprachnachrichten als Zeile – Tippen öffnet die Vorschau (teilen, sichern)
+    @ViewBuilder private func anhang(_ a: Matrix.Anhang, eigen: Bool, hinten: AnyShapeStyle) -> some View {
+        let bild = a.art == .bild ? a.mxc : a.vorschau
+        Button {
+            guard laedtAnhang == nil else { return }
+            laedtAnhang = a.mxc
+            Task { vorschau = await chat.datei(a); laedtAnhang = nil }
+        } label: {
+            if !bild.isEmpty {
+                let seiten = a.breite > 0 && a.hoehe > 0 ? CGFloat(a.breite) / CGFloat(a.hoehe) : 4 / 3
+                MatrixBild(mxc: bild, groesse: 800)
+                    .frame(width: seiten >= 1 ? 240 : 240 * seiten, height: seiten >= 1 ? 240 / seiten : 240)
+                    .background(Color(.systemGray5))
+                    .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+                    .overlay { if a.art == .video { Image(systemName: "play.circle.fill").font(.system(size: 44)).foregroundStyle(.white).shadow(radius: 4) } }
+            } else {
+                Label(a.name.isEmpty ? Matrix.anhangText(a) : a.name, systemImage: a.art == .audio ? "waveform" : a.art == .video ? "film" : "doc.fill")
+                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .foregroundStyle(eigen ? Color.white : Color.primary)
+                    .padding(.horizontal, 13).padding(.vertical, 10)
+                    .background(hinten, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+            }
+        }
+        .buttonStyle(.plain)
+        .overlay { if laedtAnhang == a.mxc { ProgressView() } }
     }
 
     private var eingabe: some View {

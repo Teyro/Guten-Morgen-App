@@ -69,3 +69,18 @@ final class ChatMeldenTests: XCTestCase {
         XCTAssertEqual(z.text, "Kollegium (3), Medien (1)")
     }
 }
+
+final class MatrixAnhangTests: XCTestCase {
+    /// Foto als Anhang statt Dateiname als Text; Profilbilder aus m.room.member; Medien-Pfad mit Anmeldung (v1)
+    func testAnhangUndAvatar() throws {
+        let j = #"{"next_batch":"s1","rooms":{"join":{"!d:s":{"summary":{"m.heroes":["@v:s"]},"state":{"events":[{"type":"m.room.member","state_key":"@v:s","content":{"displayname":"Viviane Haist","avatar_url":"mxc://s/abc"}}]},"timeline":{"events":[{"type":"m.room.message","event_id":"$1","sender":"@v:s","origin_server_ts":1000,"content":{"msgtype":"m.image","body":"IMG_1.jpg","url":"mxc://s/bild1","info":{"w":800,"h":600}}},{"type":"m.room.message","event_id":"$2","sender":"@v:s","origin_server_ts":2000,"content":{"msgtype":"m.file","body":"Plan.pdf","url":"mxc://s/pdf"}}]}}}}}"#
+        let r = try XCTUnwrap(Matrix.einarbeiten(try XCTUnwrap(JSONSerialization.jsonObject(with: Data(j.utf8)) as? [String: Any]), in: []).raeume.first)
+        XCTAssertEqual(r.nachrichten.map(\.text), ["📷 Foto", "📎 Plan.pdf"])
+        XCTAssertEqual(r.nachrichten.first?.anhang?.mxc, "mxc://s/bild1")
+        XCTAssertEqual(r.nachrichten.first?.anhang?.breite, 800)
+        XCTAssertEqual(r.bild, "mxc://s/abc")
+        XCTAssertEqual(Matrix.medienPfad("mxc://s/abc", groesse: 96), "/_matrix/client/v1/media/thumbnail/s/abc?width=96&height=96&method=scale")
+        XCTAssertEqual(Matrix.medienPfad("mxc://s/abc"), "/_matrix/client/v1/media/download/s/abc")
+        XCTAssertNil(Matrix.medienPfad("https://x/y"))
+    }
+}

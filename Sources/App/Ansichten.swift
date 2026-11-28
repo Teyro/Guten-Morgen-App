@@ -510,6 +510,7 @@ struct EinstellungenAnsicht: View {
     @Environment(\.dismiss) private var schliessen
     @State private var haeuserText = ""
     @State private var scannen = false
+    @State private var neuePerson = ""
     @Environment(\.openURL) private var oeffneURL
     private let tage = [(2, "Montag"), (3, "Dienstag"), (4, "Mittwoch"), (5, "Donnerstag"), (6, "Freitag"), (7, "Samstag"), (1, "Sonntag")]
 
@@ -792,6 +793,19 @@ struct EinstellungenAnsicht: View {
                     Button("Verbindung trennen", role: .destructive) { k.edupoolToken = ""; k.aufgaben = nil; k.einstellungen.aufgaben = false }
                 }
             } header: { Text("Edupool-Aufgaben") } footer: { Text("Verbinden öffnet die Freigabeseite von Edupool Boards in der App, der Code ist schon eingetragen: anmelden, „Lesen“ anhaken – zum Antworten auf Karten auch „erstellen, ändern“ –, Laufzeit wählen (bis 90 Tage), bestätigen und die Seite schließen. Dein Passwort sieht die App nie.") }
+            Section {
+                Toggle("Chat-Blasen in diesen Farben", isOn: $k.einstellungen.chatFarben)
+                ForEach(kern.farbenPersonen.keys.sorted(), id: \.self) { name in
+                    ColorPicker(name, selection: Binding(get: { FarbWahl.farbe(kern.farbenPersonen[name] ?? "") },
+                                                         set: { k.einstellungen.eigeneFarben[name] = FarbWahl.hex($0) }), supportsOpacity: false)
+                }
+                HStack {
+                    TextField("Name wie im Chat, z. B. Vivi", text: $neuePerson).textInputAutocapitalization(.words)
+                    Button("Hinzufügen") { k.einstellungen.eigeneFarben[neuePerson.trimmingCharacters(in: .whitespaces)] = "#8f9bd6"; neuePerson = "" }
+                        .disabled(neuePerson.trimmingCharacters(in: .whitespaces).count < 3)
+                }
+                if !kern.einstellungen.eigeneFarben.isEmpty { Button("Eigene Farben zurücksetzen", role: .destructive) { k.einstellungen.eigeneFarben = [:] } }
+            } header: { Text("Farben der Personen") } footer: { Text("Kommen aus dem Edupool-Board „Medien“ (Karte je Person). Gilt für den Störungs-Chat und den Chat – der Name wird nach Vorname (+ Anfang des Nachnamens) zugeordnet, „Viviane Haist“ → „Vivi“.") }
 
             Section {
                 TextField("Name des Skripts", text: $k.einstellungen.meinTagSkript).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -1040,6 +1054,12 @@ enum SafariSeite {
 
 /// Kartenfarbe für Edupool: „Alle“ (keine Farbe = jede Karte) oder eine der Farben auf den Boards, dazu frei als #rrggbb
 struct FarbWahl: View {
+    /// Farbe → „#rrggbb“
+    static func hex(_ c: Color) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02x%02x%02x", Int(max(0, min(1, r)) * 255), Int(max(0, min(1, g)) * 255), Int(max(0, min(1, b)) * 255))
+    }
     @Binding var farbe: String
     let farben: [String]
     static func farbe(_ hex: String) -> Color {

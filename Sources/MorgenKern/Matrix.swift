@@ -17,6 +17,20 @@ public struct Matrix: Sendable {
         public var text: String
         public var zeit: Date
         public var verschluesselt = false
+        /// Bild, Video, Audio oder Datei (dann ist [text] nur Beschriftung bzw. „📷 Foto“)
+        public var anhang: Anhang?
+    }
+
+    public struct Anhang: Hashable, Sendable {
+        public enum Art: String, Sendable { case bild, video, audio, datei }
+        public var art: Art
+        public var mxc: String
+        public var name: String
+        /// eigener Text zum Anhang (nicht nur der Dateiname)
+        public var beschriftung = ""
+        public var breite = 0, hoehe = 0
+        /// Vorschaubild (bei Videos)
+        public var vorschau = ""
     }
 
     public struct Raum: Hashable, Identifiable, Sendable {
@@ -31,6 +45,12 @@ public struct Matrix: Sendable {
         public var angepinnt = false
         public var verschluesselt = false
         public var nachrichten: [Nachricht] = []
+        /// Matrix-ID → Profilbild (mxc://…); [avatar] = Bild des Raums
+        public var bilder: [String: String] = [:]
+        public var avatar = ""
+
+        /// Bild für die Liste: Raumbild, im Direktchat das der anderen Person
+        public var bild: String { avatar.isEmpty && helden.count == 1 ? bilder[helden[0]] ?? "" : avatar }
 
         public var name: String {
             if !titel.isEmpty { return titel }
@@ -118,6 +138,56 @@ public struct Matrix: Sendable {
 
     public func abmelden() async { _ = try? await Self.anfrage("/_matrix/client/v3/logout", methode: "POST", token: token, koerper: [:]) }
 
+    /// mxc://server/id → Pfad zum (angemeldeten) Laden; [groesse] > 0 = Vorschaubild
+    public static func medienPfad(_ mxc: String, groesse: Int = 0) -> String? {
+        let t = mxc.split(separator: "/", omittingEmptySubsequences: true)
+        guard mxc.hasPrefix("mxc://"), t.count == 3 else { return nil }
+        let s = pfad(String(t[1])), id = pfad(String(t[2]))
+        return groesse > 0 ? "/_matrix/client/v1/media/thumbnail/\(s)/\(id)?width=\(groesse)&height=\(groesse)&method=scale"
+                           : "/_matrix/client/v1/media/download/\(s)/\(id)"
+    }
+
+    /// Bild/Datei laden (mit Anmeldung, wie Element)
+    public func medien(_ mxc: String, groesse: Int = 0) async throws -> Data {
+        guard let p = Self.medienPfad(mxc, groesse: groesse) else { throw Fehler.server(0, "") }
+        var r = URLRequest(url: URL(string: Self.server + p)!, timeoutInterval: 60)
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (d, a) = try await URLSession.shared.data(for: r)
+        let s = (a as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(s) else { throw Fehler.server(s, "") }
+        return d
+    }
+
+    /// Anhang aus dem Inhalt einer Nachricht (msgtype m.image/m.video/m.audio/m.file)
+    static func anhang(_ c: [String: Any]) -> Anhang? {
+        let art: Anhang.Art
+        switch c["msgtype"] as? String {
+        case "m.image", "m.sticker": art = .bild
+        case "m.video": art = .video
+        case "m.audio": art = .audio
+        case "m.file": art = .datei
+        default: return nil
+        }
+        // shortcut: verschlüsselte Anhänge (content.file) werden nicht entschlüsselt – nur angezeigt, dass es einen gibt
+        guard let mxc = c["url"] as? String ?? (c["file"] as? [String: Any])?["url"] as? String else { return nil }
+        let body = c["body"] as? String ?? "", datei = c["filename"] as? String ?? ""
+        let info = c["info"] as? [String: Any] ?? [:]
+        return Anhang(art: art, mxc: mxc, name: datei.isEmpty ? body : datei, beschriftung: !datei.isEmpty && body != datei ? body : "",
+                      breite: (info["w"] as? NSNumber)?.intValue ?? 0, hoehe: (info["h"] as? NSNumber)?.intValue ?? 0,
+                      vorschau: info["thumbnail_url"] as? String ?? "")
+    }
+
+    /// Kurzer Text für Liste, Suche und Mitteilungen
+    public static func anhangText(_ a: Anhang) -> String {
+        if !a.beschriftung.isEmpty { return a.beschriftung }
+        switch a.art {
+        case .bild: return "📷 Foto"
+        case .video: return "🎬 Video"
+        case .audio: return "🎤 Sprachnachricht"
+        case .datei: return "📎 " + a.name
+        }
+    }
+
     static func pfad(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s }
 
     // MARK: Lesen
@@ -148,15 +218,20 @@ public struct Matrix: Sendable {
                 switch typ {
                 case "m.room.name": raum.titel = inhalt["name"] as? String ?? ""
                 case "m.room.encryption": raum.verschluesselt = true
+                case "m.room.avatar": raum.avatar = inhalt["url"] as? String ?? ""
                 case "m.room.member":
-                    if let k = e["state_key"] as? String, let n = inhalt["displayname"] as? String, !n.isEmpty { raum.namen[k] = n }
+                    if let k = e["state_key"] as? String {
+                        if let n = inhalt["displayname"] as? String, !n.isEmpty { raum.namen[k] = n }
+                        if let a = inhalt["avatar_url"] as? String { raum.bilder[k] = a }
+                    }
                 case "m.room.message", "m.room.encrypted":
                     guard let eid = e["event_id"] as? String, !raum.nachrichten.contains(where: { $0.id == eid }) else { continue }
                     let enc = typ == "m.room.encrypted"
-                    let text = enc ? "🔒 Verschlüsselte Nachricht – nur in Element/IServ lesbar" : (inhalt["body"] as? String ?? "")
+                    let anhang = enc ? nil : anhang(inhalt)
+                    let text = enc ? "🔒 Verschlüsselte Nachricht – nur in Element/IServ lesbar" : anhang.map(anhangText) ?? (inhalt["body"] as? String ?? "")
                     guard !text.isEmpty else { continue } // gelöscht
                     let ms = (e["origin_server_ts"] as? NSNumber)?.doubleValue ?? 0
-                    raum.nachrichten.append(Nachricht(id: eid, absender: e["sender"] as? String ?? "", text: text, zeit: Date(timeIntervalSince1970: ms / 1000), verschluesselt: enc))
+                    raum.nachrichten.append(Nachricht(id: eid, absender: e["sender"] as? String ?? "", text: text, zeit: Date(timeIntervalSince1970: ms / 1000), verschluesselt: enc, anhang: anhang))
                 default: break
                 }
             }

@@ -35,6 +35,8 @@ final class Kern {
     /// Eigene Vertretungs-Statistik (nur über mich), wächst mit jedem geladenen Plan
     var statistik: VertretungsStatistik = Kern.gemerkt("vertretungsStatistik") ?? VertretungsStatistik() { didSet { if statistik != oldValue { merke(statistik, "vertretungsStatistik") } } }
     var personenFarben: [String: String] = Kern.gemerkt("personenFarben") ?? [:] { didSet { merke(personenFarben, "personenFarben") } }
+    /// Farben der Personen: fest (Board „Medien“) ← Edupool ← von Hand in den Einstellungen
+    var farbenPersonen: [String: String] { Aufgaben.medienVorgabe.merging(personenFarben) { $1 }.merging(einstellungen.eigeneFarben) { $1 } }
     var untisSucheHinweis = ""
     @ObservationIgnored private var untisSuche: Untis.Suche?
     @ObservationIgnored private var sicherungDaten: Data?
